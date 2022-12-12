@@ -3,10 +3,9 @@
 `Movie Recommendation`  
 - 사용자의 영화 시청 이력 데이터를 바탕으로 사용자가 **다음에 시청할 영화 및 좋아할 영화를 예측**
 
-![image](https://s3-us-west-2.amazonaws.com/aistages-prod-server-public/app/Users/00000068/files/b147dabe-613e-4ebf-b605-b615f032608d..png)
+![image_movie_recommendation_1](https://user-images.githubusercontent.com/79534756/206973144-f99f537b-2d5f-477e-9184-c35eacb8706b.JPG)
 
 ***기간*** : 2022.12.12 ~ 2022.1.06(4주)
-
 
 
 ***Description*** :
@@ -40,7 +39,7 @@
 	- header제외 313,600 행
 
 - ***Metric*** : 
-	![image](https://s3-us-west-2.amazonaws.com/aistages-prod-server-public/app/Users/00000068/files/6ea4c101-a327-45bb-8f1c-08307208ea3a..png)
+	![image_movie_recommendation_2](https://user-images.githubusercontent.com/79534756/206973347-6ca2ab45-8a0c-4602-ba0f-80e8d04dd8a0.JPG)
 
 	- (normalized) Recall@10
 
