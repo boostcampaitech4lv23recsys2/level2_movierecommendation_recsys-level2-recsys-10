@@ -5,9 +5,8 @@ from torch.utils.data import Dataset
 
 from utils import neg_sample
 
-
 class PretrainDataset(Dataset):
-    def __init__(self, args, user_seq, long_sequence):
+    def __init__(self, args:dict, user_seq:list, long_sequence:list):
         self.args = args
         self.user_seq = user_seq
         self.long_sequence = long_sequence
@@ -16,8 +15,12 @@ class PretrainDataset(Dataset):
         self.split_sequence()
 
     def split_sequence(self):
+        """ user 가 본 movie id list 단위로 train set 을 분리한다.  
+        """
         for seq in self.user_seq:
+            # arg 에서 지정한 max_len 만큼의 movie id 를 input 으로 사용한다. 
             input_ids = seq[-(self.max_len + 2) : -2]  # keeping same as train set
+            # 예를 들어 [5225, 1046, 64034] 라면, [5225], [5225, 1046], [5225, 1046, 6404] 를 append
             for i in range(len(input_ids)):
                 self.part_sequence.append(input_ids[: i + 1])
 
@@ -32,10 +35,14 @@ class PretrainDataset(Dataset):
         neg_items = []
         # Masked Item Prediction
         item_set = set(sequence)
+        # masked_item_sequence 와 neg_items 를 추출한다.  
+        # 각 sequence 에서 마지막 item 을 제외하고 순회한다. 
         for item in sequence[:-1]:
             prob = random.random()
             if prob < self.args.mask_p:
+                # arg 의 max_len + 1 이 추가된다. 
                 masked_item_sequence.append(self.args.mask_id)
+                # 현재 item_set 에 없는 item 을 추가 
                 neg_items.append(neg_sample(item_set, self.args.item_size))
             else:
                 masked_item_sequence.append(item)
