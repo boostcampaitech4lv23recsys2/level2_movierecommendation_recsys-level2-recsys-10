@@ -27,7 +27,16 @@ def check_path(path):
         print(f"{path} created")
 
 
-def neg_sample(item_set, item_size):
+def neg_sample(item_set:set, item_size:int):
+    """1부터 item_size - 1 까지의 값에서 제공된 item_set 에 없는 값을 반환한다. 
+
+    Args:
+        item_set (set): int 값을 element 로 가지는 set
+        item_size (int): randomint 를 추출할 최대 값
+
+    Returns:
+        _type_: 주어진 
+    """
     item = random.randint(1, item_size - 1)
     while item in item_set:
         item = random.randint(1, item_size - 1)
@@ -197,12 +206,24 @@ def get_user_seqs(data_file):
     )
 
 
-def get_user_seqs_long(data_file):
+def get_user_seqs_long(data_file:str):
+    """user가 본 item 기록이 있는 data file 을 받아서 sequence 정보를 반환한다. 
+
+    Args:
+        data_file (str): user가 본 item 목록이 있는 data file ( train_ratings.csv )
+
+    Returns:
+        list: user 별로 본 영화의 id list, [[],..] 
+        int : 전체 user 가 본 movie 의 unique id 개수, 
+        list: 전체 user 가 본 movie list ( 중복 O ) []
+    """
     rating_df = pd.read_csv(data_file)
+    # user id 로 group 하여 item 목록 추출 : pandas seriese
     lines = rating_df.groupby("user")["item"].apply(list)
     user_seq = []
     long_sequence = []
     item_set = set()
+    # 한 명의 user 가 본 item list 순회
     for line in lines:
         items = line
         long_sequence.extend(items)
@@ -213,7 +234,16 @@ def get_user_seqs_long(data_file):
     return user_seq, max_item, long_sequence
 
 
-def get_item2attribute_json(data_file):
+def get_item2attribute_json(data_file:str):
+    """_summary_
+
+    Args:
+        data_file (str): 전처리에 의해 생성된 데이터(item과 genre의 mapping 데이터)의 file name
+
+    Returns:
+        list: item 과 attribute 가 mapping 된 객체가 담긴 list 
+        int : movie attribute 의 unique 한 개수 
+    """
     item2attribute = json.loads(open(data_file).readline())
     attribute_set = set()
     for item, attributes in item2attribute.items():
