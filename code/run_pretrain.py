@@ -16,10 +16,14 @@ from utils import (
     set_seed,
 )
 
+import wandb
+
 
 def main():
     parser = argparse.ArgumentParser()
-
+    
+    parser.add_argument("--sweep", default="False", type=bool)
+    
     parser.add_argument("--data_dir", default="../data/train/", type=str)
     parser.add_argument("--output_dir", default="output/", type=str)
     parser.add_argument("--data_name", default="Ml", type=str)
@@ -48,11 +52,12 @@ def main():
     parser.add_argument("--max_seq_length", default=50, type=int)
 
     # train args
-    parser.add_argument("--lr", type=float, default=0.001, help="learning rate of adam")
+    parser.add_argument("--lr", type=float, default=0.0011, help="learning rate of adam")
     parser.add_argument(
         "--batch_size", type=int, default=256, help="number of batch_size"
     )
     parser.add_argument("--epochs", type=int, default=200, help="number of epochs")
+    parser.add_argument("--patience", type=int, default=20, help="patience for early stopping")
     parser.add_argument("--no_cuda", action="store_true")
     parser.add_argument("--log_freq", type=int, default=1, help="per epoch print res")
     parser.add_argument("--seed", default=42, type=int)
@@ -104,26 +109,30 @@ def main():
 
     args.item2attribute = item2attribute
 
-    model = S3RecModel(args=args)
-    trainer = PretrainTrainer(model, None, None, None, None, args)
+    
+    wandb.login()
+    with wandb.init(project="Movie_Rec_S3Rec_pretrain", config=vars(args)):
+        # args = wandb.config
+        model = S3RecModel(args=args)
+        trainer = PretrainTrainer(model, None, None, None, None, args)
 
-    early_stopping = EarlyStopping(args.checkpoint_path, patience=10, verbose=True)
+        early_stopping = EarlyStopping(args.checkpoint_path, patience=args.patience, verbose=True)
 
-    for epoch in range(args.pre_epochs):
+        for epoch in range(args.pre_epochs):
 
-        pretrain_dataset = PretrainDataset(args, user_seq, long_sequence)
-        pretrain_sampler = RandomSampler(pretrain_dataset)
-        pretrain_dataloader = DataLoader(
-            pretrain_dataset, sampler=pretrain_sampler, batch_size=args.pre_batch_size
-        )
+            pretrain_dataset = PretrainDataset(args, user_seq, long_sequence)
+            pretrain_sampler = RandomSampler(pretrain_dataset)
+            pretrain_dataloader = DataLoader(
+                pretrain_dataset, sampler=pretrain_sampler, batch_size=args.pre_batch_size
+            )
 
-        losses = trainer.pretrain(epoch, pretrain_dataloader)
+            losses = trainer.pretrain(epoch, pretrain_dataloader)
 
-        ## comparing `sp_loss_avg``
-        early_stopping(np.array([-losses["sp_loss_avg"]]), trainer.model)
-        if early_stopping.early_stop:
-            print("Early stopping")
-            break
+            ## comparing `sp_loss_avg``
+            early_stopping(np.array([-losses["sp_loss_avg"]]), trainer.model)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break
 
 
 if __name__ == "__main__":

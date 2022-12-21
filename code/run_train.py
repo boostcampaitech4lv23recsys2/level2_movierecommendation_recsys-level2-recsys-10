@@ -16,10 +16,14 @@ from utils import (
     set_seed,
 )
 
+import wandb
+
 
 def main():
     parser = argparse.ArgumentParser()
-
+    
+    parser.add_argument("--sweep", default="False", type=bool)
+    
     parser.add_argument("--data_dir", default="../data/train/", type=str)
     parser.add_argument("--output_dir", default="output/", type=str)
     parser.add_argument("--data_name", default="Ml", type=str)
@@ -30,7 +34,7 @@ def main():
         "--hidden_size", type=int, default=64, help="hidden size of transformer model"
     )
     parser.add_argument(
-        "--num_hidden_layers", type=int, default=2, help="number of layers"
+        "--num_hidden_layers", type=int, default=2, help="number of layers" # number of encoder blocks
     )
     parser.add_argument("--num_attention_heads", default=2, type=int)
     parser.add_argument("--hidden_act", default="gelu", type=str)  # gelu relu
@@ -52,6 +56,7 @@ def main():
         "--batch_size", type=int, default=256, help="number of batch_size"
     )
     parser.add_argument("--epochs", type=int, default=200, help="number of epochs")
+    parser.add_argument("--patience", default=20, help="patience")
     parser.add_argument("--no_cuda", action="store_true")
     parser.add_argument("--log_freq", type=int, default=1, help="per epoch print res")
     parser.add_argument("--seed", default=42, type=int)
@@ -68,7 +73,7 @@ def main():
     parser.add_argument("--gpu_id", type=str, default="0", help="gpu_id")
 
     parser.add_argument("--using_pretrain", action="store_true")
-
+    
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -120,42 +125,49 @@ def main():
     test_dataloader = DataLoader(
         test_dataset, sampler=test_sampler, batch_size=args.batch_size
     )
+    
+    # train
+    wandb.login()
+    with wandb.init(project="Movie_Rec_S3Rec_train", config=vars(args)):
+        model = S3RecModel(args=args)
 
-    model = S3RecModel(args=args)
+        trainer = FinetuneTrainer(
+            model, train_dataloader, eval_dataloader, test_dataloader, None, args
+        )
 
-    trainer = FinetuneTrainer(
-        model, train_dataloader, eval_dataloader, test_dataloader, None, args
-    )
+        print(args.using_pretrain)
+        if args.using_pretrain:
+            pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
+            try:
+                trainer.load(pretrained_path)
+                print(f"Load Checkpoint From {pretrained_path}!")
 
-    print(args.using_pretrain)
-    if args.using_pretrain:
-        pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
-        try:
-            trainer.load(pretrained_path)
-            print(f"Load Checkpoint From {pretrained_path}!")
+            except FileNotFoundError:
+                print(f"{pretrained_path} Not Found! The Model is same as SASRec")
+        else:
+            print("Not using pretrained model. The Model is same as SASRec")
 
-        except FileNotFoundError:
-            print(f"{pretrained_path} Not Found! The Model is same as SASRec")
-    else:
-        print("Not using pretrained model. The Model is same as SASRec")
+        early_stopping = EarlyStopping(args.checkpoint_path, patience=args.patience, verbose=True)
+        for epoch in range(args.epochs):
+            print('#####################################################################')
+            trainer.train(epoch)
 
-    early_stopping = EarlyStopping(args.checkpoint_path, patience=10, verbose=True)
-    for epoch in range(args.epochs):
-        trainer.train(epoch)
+            scores, _ = trainer.valid(epoch)
+            
+            early_stopping(np.array(scores[-1:]), trainer.model)
+            # early_stopping(np.array(scores[2]), trainer.model) # RECALL@10
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break
 
-        scores, _ = trainer.valid(epoch)
-
-        early_stopping(np.array(scores[-1:]), trainer.model)
-        if early_stopping.early_stop:
-            print("Early stopping")
-            break
-
-    trainer.args.train_matrix = test_rating_matrix
-    print("---------------Change to test_rating_matrix!-------------------")
-    # load the best model
-    trainer.model.load_state_dict(torch.load(args.checkpoint_path))
-    scores, result_info = trainer.test(0)
-    print(result_info)
+        trainer.args.train_matrix = test_rating_matrix
+        print("---------------Change to test_rating_matrix!-------------------")
+        # load the best model
+        # trainer.model.load_state_dict(torch.load(args.checkpoint_path))
+        trainer.model.load_state_dict(torch.load(os.path.join(args.output_dir, checkpoint.split('/')[-1])))
+        scores, result_info = trainer.test(0)
+        wandb.log(result_info, step=epoch+1)
+        print(result_info)
 
 
 if __name__ == "__main__":

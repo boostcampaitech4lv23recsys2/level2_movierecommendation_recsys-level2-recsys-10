@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import tqdm
 from torch.optim import Adam
+import wandb
 
 from utils import ndcg_k, recall_at_k
 
@@ -65,15 +66,15 @@ class Trainer:
             recall.append(recall_at_k(answers, pred_list, k))
             ndcg.append(ndcg_k(answers, pred_list, k))
         post_fix = {
-            "Epoch": epoch,
-            "RECALL@5": "{:.4f}".format(recall[0]),
-            "NDCG@5": "{:.4f}".format(ndcg[0]),
-            "RECALL@10": "{:.4f}".format(recall[1]),
-            "NDCG@10": "{:.4f}".format(ndcg[1]),
+            "epoch": epoch,
+            "RECALL@5": round(recall[0],4),
+            "NDCG@5": round(ndcg[0],4),
+            "RECALL@10": round(recall[1],4),
+            "NDCG@10": round(ndcg[1],4),
         }
         print(post_fix)
 
-        return [recall[0], ndcg[0], recall[1], ndcg[1]], str(post_fix)
+        return [recall[0], ndcg[0], recall[1], ndcg[1]], post_fix
 
     def save(self, file_name):
         torch.save(self.model.cpu().state_dict(), file_name)
@@ -130,7 +131,10 @@ class PretrainTrainer(Trainer):
         )
 
     def pretrain(self, epoch, pretrain_dataloader):
-
+        
+        if self.args.sweep==False:
+            wandb.watch(self.model, self.model.criterion, log="parameters", log_freq=self.args.log_freq)
+            
         desc = (
             f"AAP-{self.args.aap_weight}-"
             f"MIP-{self.args.mip_weight}-"
@@ -200,6 +204,9 @@ class PretrainTrainer(Trainer):
         }
         print(desc)
         print(str(losses))
+        
+        wandb.log(losses, step=epoch)
+        
         return losses
 
 
@@ -223,9 +230,12 @@ class FinetuneTrainer(Trainer):
         )
 
     def iteration(self, epoch, dataloader, mode="train"):
-
+        
+        if mode != "submission" and self.args.sweep==False:
+            wandb.watch(self.model, self.cross_entropy, log="parameters", log_freq=self.args.log_freq)
+            
         # Setting the tqdm progress bar
-
+        
         rec_data_iter = tqdm.tqdm(
             enumerate(dataloader),
             desc="Recommendation EP_%s:%d" % (mode, epoch),
@@ -250,12 +260,14 @@ class FinetuneTrainer(Trainer):
 
                 rec_avg_loss += loss.item()
                 rec_cur_loss = loss.item()
-
+            
+            rec_avg_loss_per_len = rec_avg_loss / len(rec_data_iter)
             post_fix = {
                 "epoch": epoch,
-                "rec_avg_loss": "{:.4f}".format(rec_avg_loss / len(rec_data_iter)),
-                "rec_cur_loss": "{:.4f}".format(rec_cur_loss),
+                "rec_avg_loss": round(rec_avg_loss_per_len, 4),
+                "rec_cur_loss": round(rec_cur_loss, 4),
             }
+            wandb.log(post_fix, step=epoch)
 
             if (epoch + 1) % self.args.log_freq == 0:
                 print(str(post_fix))
@@ -301,4 +313,6 @@ class FinetuneTrainer(Trainer):
             if mode == "submission":
                 return pred_list
             else:
-                return self.get_full_sort_score(epoch, answer_list, pred_list)
+                score, metrics = self.get_full_sort_score(epoch, answer_list, pred_list)
+                wandb.log(metrics, step=epoch)
+                return score, metrics
