@@ -46,7 +46,7 @@ def main():
         "--adam_beta2", type=float, default=0.999, help="adam second beta value"
     )
 
-    parser.add_argument('--save', type=str, default='model.pt',
+    parser.add_argument('--save', type=str, default='output/model.pt',
                         help='path to save the final model')
 
     args = parser.parse_args()
@@ -57,9 +57,10 @@ def main():
 
     args.device = torch.device("cuda" if args.cuda else "cpu")
 
+    model_dir = os.path.join(args.output_dir, args.save)
 
     # Load the best saved model.
-    with open(args.save, 'rb') as f:
+    with open(model_dir, 'rb') as f:
         model = torch.load(f)
 
     rating_df = pd.read_csv(os.path.join(args.data_dir, args.train_data), header=0)
