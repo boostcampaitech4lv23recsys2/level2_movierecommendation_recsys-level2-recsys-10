@@ -87,6 +87,8 @@ def main():
         recon_batch, _, _ = model(test_data_tensor)
     elif args.model_name == 'multiDAE':
         recon_batch = model(test_data_tensor)
+    elif args.model_name == 'recVAE':
+        recon_batch, _, _ = model(test_data_tensor)
 
     id2show = dict(zip(show2id.values(),show2id.keys()))
     id2profile = dict(zip(profile2id.values(),profile2id.keys()))

@@ -6,13 +6,15 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.optim as optim
+from  torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
 from torch.utils.data import DataLoader#, RandomSampler, SequentialSampler
 
 
 from preprocessing import numerize
 from datasets import (
-    MultiVAEDataset, MultiVAEValidDataset
+    MultiVAEDataset, MultiVAEValidDataset,
+    RecVAEDataset, RecVAEValidDataset,
     )
 # from data_loader import DataLoader
 from trainer import Trainer
@@ -26,8 +28,8 @@ from utils import (
     Recall_at_k_batch
 )
 from models import (
-    MultiVAE, loss_function_vae,
-    MultiDAE, loss_function_dae,
+    MultiVAE,
+    MultiDAE,
     # EASE,
     RecVAE
 )
@@ -66,6 +68,7 @@ def main():
 
     # train args
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate of adam")
+    parser.add_argument("--lr_decay_step", type=int, default=1000, help="default: 1000") 
     parser.add_argument(
         "--weight_decay", type=float, default=0.0, help="weight_decay of adam"
     )
@@ -81,14 +84,20 @@ def main():
     parser.add_argument('--cuda', action='store_true', help='use CUDA')
     parser.add_argument("--log_freq", type=int, default=100, metavar='N', help="per epoch print res")
     parser.add_argument("--reg", type=int, default=750, help="reg for EASE")
-     
-    
+    parser.add_argument("--genre_filter", type=bool, default=False, help=" ")
+    parser.add_argument('--hidden_dim', type=int, default=600)
+    parser.add_argument('--latent_dim', type=int, default=200)
+    parser.add_argument('--dropout_rate', type=float, default=0.5)
+    parser.add_argument('--beta', type=float, default=None)
+    parser.add_argument('--gamma', type=float, default=0.005)
+
     parser.add_argument(
         "--adam_beta1", type=float, default=0.9, help="adam first beta value"
     )
     parser.add_argument(
         "--adam_beta2", type=float, default=0.999, help="adam second beta value"
     )
+    
     # parser.add_argument("--gpu_id", type=str, default="0", help="gpu_id")
     # parser.add_argument("--using_pretrain", action="store_true")
 
@@ -125,41 +134,49 @@ def main():
         train_dataset = MultiVAEDataset(args)
         valid_dataset = MultiVAEValidDataset(train_dataset = train_dataset)
 
-        train_loader = DataLoader(train_dataset, batch_size=250, drop_last=True, pin_memory=True, shuffle=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=500, drop_last=False, pin_memory=True, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, drop_last=True, pin_memory=True, shuffle=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, drop_last=False, pin_memory=True, shuffle=False)
 
         # 모델 정의
-        n_items = train_dataset.n_items
-        p_dims=[200, 600, n_items]
+        p_dims=[200, 600, train_dataset.n_items]
         model = MultiVAE(p_dims).to(args.device)
-        criterion = loss_function_vae
         optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=args.weight_decay)
-        is_VAE=True
     elif args.model_name == 'multiDAE':
         train_dataset = MultiVAEDataset(args)
         valid_dataset = MultiVAEValidDataset(train_dataset = train_dataset)
        
-        train_loader = DataLoader(train_dataset, batch_size=250, drop_last=True, pin_memory=True, shuffle=True)
-        valid_loader = DataLoader(valid_dataset, batch_size=500, drop_last=False, pin_memory=True, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, drop_last=True, pin_memory=True, shuffle=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, drop_last=False, pin_memory=True, shuffle=False)
 
         # 모델 정의
-        n_items = train_dataset.n_items
-        p_dims=[200, 600, n_items]
+        p_dims=[200, 600, train_dataset.n_items]
         model = MultiDAE(p_dims).to(args.device)
-        criterion = loss_function_dae
         optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=args.weight_decay)
-        is_VAE=False
     elif args.model_name == "EASE":
-        # make_matrix_data_set = MatrixDataset()
-        # user_train, user_valid = make_matrix_data_set.get_train_valid_data()
-        # # X = make_matrix_data_set.make_sparse_matrix()
-        
-        # X_test = make_matrix_data_set.make_sparse_matrix(test = True)
-        # model = EASE(X = X_test, reg = args.reg)
-        # model.fit()
         pass
     elif args.model_name == "recVAE":
-        pass
+        train_dataset = RecVAEDataset(args)
+        valid_dataset = RecVAEValidDataset(train_dataset = train_dataset, genre_filter = args.genre_filter)
+
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, drop_last=True, pin_memory=True, shuffle=True)
+        valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, drop_last=False, pin_memory=True, shuffle=False)
+        
+        # 모델 정의
+        model = RecVAE(
+            hidden_dim=args.hidden_dim,
+            latent_dim=args.latent_dim,
+            input_dim=train_dataset.n_items,
+            dropout_rate=args.dropout_rate
+        ).to(args.device)
+
+        optimizer_encoder = torch.optim.Adam(set(model.decoder.parameters()), lr=args.lr)
+        optimizer_decoder = torch.optim.Adam(set(model.encoder.parameters()), lr=args.lr)
+        optimizer = [optimizer_encoder, optimizer_decoder]
+
+        # -- Learning Rate Scheduler
+        scheduler_encoder = StepLR(optimizer_encoder, step_size=args.lr_decay_step, gamma=0.5)
+        scheduler_decoder = StepLR(optimizer_decoder, step_size=args.lr_decay_step, gamma=0.5)
+
     
     # save model args
     args_str = f"{args.model_name}-{args.data_name}"
@@ -170,7 +187,7 @@ def main():
     args.save = os.path.join(args.output_dir, checkpoint)
 
     trainer = Trainer(
-        model, criterion, optimizer, train_loader, valid_loader, None, args
+        model, optimizer, train_loader, valid_loader, args
     )
 
     ###############################################################################
@@ -181,8 +198,8 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time()
-        trainer.train(epoch, is_VAE)
-        total_loss, r10, r20 = trainer.evaluate(is_VAE) # mode: valid
+        trainer.train(epoch, args.model_name)
+        total_loss, r10, r20 = trainer.evaluate(args.model_name) # mode: valid
         # val_loss, n100, r20, r50 = evaluate(model, criterion, vad_data_tr, vad_data_te, is_VAE=False)
         print('-' * 89)
         print('| end of epoch {:3d} | time: {:4.2f}s | valid loss {:4.2f} | '

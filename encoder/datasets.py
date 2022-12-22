@@ -1,220 +1,317 @@
-import os
-import numpy as np
 import pandas as pd
-from collections import defaultdict
+import numpy as np
 import scipy.sparse as sp
 
-import torch
+import torch.nn as nn
 from torch.utils.data import Dataset
 
+import os
+from time import time
+from tqdm import tqdm
 
-class multiVAEDataset(Dataset):
-    def __init__(self, args, data, num_user, user_activity, data_type="train") -> None:
-        super().__init__()
-        self.args = args
-        self.data = data
-        # self.num_user = num_user
-        self.user_activity = user_activity
-        self.data_type = data_type
-        # self.users = [i for i in range(num_user)]
+class MultiVAEDataset(Dataset):
+    def __init__(self, args):
+        self.path = args.data_dir
 
-    # def __len__(self):
-    #     return self.num_user
+        #get number of users and items
+        self.n_users, self.n_items = 0, 0
+        self.exist_users = []
 
-    def __getitem__(self, idx):
-        # user = self.users[idx]
-        unique_uid = self.user_activity.index
+        # data_path는 사용자의 디렉토리에 맞게 설정해야 합니다.
+        data_path = os.path.join(self.path, args.train_data)
+        df = pd.read_csv(data_path)
 
-        np.random.seed(98765)
-        idx_perm = np.random.permutation(unique_uid.size)
-        unique_uid = unique_uid[idx_perm]
-
-        n_users = unique_uid.size #31360
-        n_heldout_users = 3000
-
-        assert self.data_type in {"train", "valid", "test", "submission"}
-
-        users = unique_uid[:(n_users - n_heldout_users * 2)]
-
-        ##훈련 데이터에 해당하는 아이템들
-        #Train에는 전체 데이터를 사용합니다.
-        plays = self.data.loc[self.data['user'].isin(users)]
-        ##아이템 ID
-        unique_sid = pd.unique(plays['item'])
-        show2id = dict((sid, i) for (i, sid) in enumerate(unique_sid))
-        profile2id = dict((pid, i) for (i, pid) in enumerate(unique_uid))
-
-        pro_dir = os.path.join(self.args.data_dir, 'pro_sg')
-
-        if not os.path.exists(pro_dir):
-            os.makedirs(pro_dir)
-
-        with open(os.path.join(pro_dir, 'unique_sid.txt'), 'w') as f:
-            for sid in unique_sid:
-                f.write('%s\n' % sid)
-
-        if self.data_type == "train":
-            data_tr = self.numerize(plays, profile2id, show2id)
-            data_tr.to_csv(os.path.join(pro_dir, 'train.csv'), index=False)
-            data_te = data_tr
-        else:
-            if self.data_type == "valid":
-                users = unique_uid[(n_users - n_heldout_users * 2): (n_users - n_heldout_users)]
-            elif self.data_type == "test":
-                users = unique_uid[(n_users - n_heldout_users):]
-            else:
-                users = []
-            plays = self.data.loc[self.data['user'].isin(users)]
-            plays = plays.loc[plays['item'].isin(unique_sid)]
-            plays_tr, plays_te = self.split_train_test_proportion(plays)
-
-            data_tr = self.numerize(plays_tr, profile2id, show2id)
-            data_tr.to_csv(os.path.join(pro_dir, self.data_type+'_tr.csv'), index=False)
-
-            data_te = self.numerize(plays_te, profile2id, show2id)
-            data_te.to_csv(os.path.join(pro_dir, self.data_type+'_te.csv'), index=False)
-                    
-        print("Done!")
-        return data_tr, data_te
-
-    def get_train_valid_data(self):
-        pass
-
-    #훈련된 모델을 이용해 검증할 데이터를 분리하는 함수입니다.
-    #100개의 액션이 있다면, 그중에 test_prop 비율 만큼을 비워두고, 그것을 모델이 예측할 수 있는지를
-    #확인하기 위함입니다.
-    def split_train_test_proportion(data, test_prop=0.2):
-        data_grouped_by_user = data.groupby('user')
-        tr_list, te_list = list(), list()
-
-        np.random.seed(98765)
+        item_ids = df['item'].unique() # 아이템 고유 번호 리스트
+        user_ids = df['user'].unique() # 유저 고유 번호 리스트
+        self.n_items, self.n_users = len(item_ids), len(user_ids)
         
-        for _, group in data_grouped_by_user:
-            n_items_u = len(group)
-            
-            if n_items_u >= 5:
-                idx = np.zeros(n_items_u, dtype='bool')
-                idx[np.random.choice(n_items_u, size=int(test_prop * n_items_u), replace=False).astype('int64')] = True
+        # user, item indexing
+        item2idx = pd.Series(data=np.arange(len(item_ids)), index=item_ids) 
+        user2idx = pd.Series(data=np.arange(len(user_ids)), index=user_ids) 
 
-                tr_list.append(group[np.logical_not(idx)])
-                te_list.append(group[idx])
-            
-            else:
-                tr_list.append(group)
+        # dataframe indexing
+        df = pd.merge(df, pd.DataFrame({'item': item_ids, 'item_idx': item2idx[item_ids].values}), on='item', how='inner')
+        df = pd.merge(df, pd.DataFrame({'user': user_ids, 'user_idx': user2idx[user_ids].values}), on='user', how='inner')
+        df.sort_values(['user_idx', 'time'], inplace=True)
+        del df['item'], df['user']
+
+        self.exist_items = list(df['item_idx'].unique())
+        self.exist_users = list(df['user_idx'].unique())
+
+        t1 = time()
+        self.train_items, self.valid_items = {}, {}
         
-        data_tr = pd.concat(tr_list)
-        data_te = pd.concat(te_list)
+        items = df.groupby("user_idx")["item_idx"].apply(list)
+        
+        print('Creating interaction Train/ Vaild Split...')
+        for uid, item in enumerate(items):            
+            num_u_valid_items = min(int(len(item)*0.125), 10) # 유저가 소비한 아이템의 12.5%, 그리고 최대 10개의 데이터셋을 무작위로 Validation Set으로 활용한다.
+            u_valid_items = np.random.choice(item, size=num_u_valid_items, replace=False)
+            self.valid_items[uid] = u_valid_items
+            self.train_items[uid] = list(set(item) - set(u_valid_items))
 
-        return data_tr, data_te
+        self.train_data = pd.concat({k: pd.Series(v) for k, v in self.train_items.items()}).reset_index(0)
+        self.train_data.columns = ['user', 'item']
 
-    def numerize(tp, profile2id, show2id):
-        uid = tp['user'].apply(lambda x: profile2id[x])
-        sid = tp['item'].apply(lambda x: show2id[x])
-        return pd.DataFrame(data={'uid': uid, 'sid': sid}, columns=['uid', 'sid'])
+        self.valid_data = pd.concat({k: pd.Series(v) for k, v in self.valid_items.items()}).reset_index(0)
+        self.valid_data.columns = ['user', 'item']
 
+        print('Train/Vaild Split Complete. Takes in', time() - t1, 'sec')
+        
+        rows, cols = self.train_data['user'], self.train_data['item']
+        self.train_input_data = sp.csr_matrix(
+            (np.ones_like(rows), (rows, cols)), 
+            dtype='float32',
+            shape=(self.n_users, self.n_items))
+        self.train_input_data = self.train_input_data.toarray()
 
-class AEDataSet(Dataset):
-    def __init__(self, num_user):
-        self.num_user = num_user
-        self.users = [i for i in range(num_user)]
+        # bm25_weight
+        # self.train_input_data = bm25_weight(self.train_input_data, K1=100, B=0.9)
+        # values = self.train_input_data.data
+        # indices = np.vstack((self.train_input_data.row, self.train_input_data.col))
+
+        # i = torch.LongTensor(indices)
+        # v = torch.FloatTensor(values)
+        # shape = self.train_input_data.shape
+
+        # self.train_input_data = torch.sparse.FloatTensor(i, v, torch.Size(shape)).to_dense()
 
     def __len__(self):
-        return self.num_user
+        return self.n_users
 
-    def __getitem__(self, idx): 
-        user = self.users[idx]
-        return torch.LongTensor([user])
+    def __getitem__(self, idx):
+        return self.train_input_data[idx,:]
 
 
-class MatrixDataset(Dataset):
-    def __init__(self, args, margs):
-        self.args = args
-        self.margs = margs
-        self.df = pd.read_csv(os.path.join(self.args.data_dir, "train_ratings.csv"))
+class MultiVAEValidDataset(Dataset):
+    def __init__(self, train_dataset):
+        self.n_users = train_dataset.n_users
+        self.n_items = train_dataset.n_items
+        self.train_input_data = train_dataset.train_input_data
 
-        self.item_encoder, self.item_decoder = self.generate_encoder_decoder("item")
-        self.user_encoder, self.user_decoder = self.generate_encoder_decoder("user")
-        self.num_item, self.num_user = len(self.item_encoder), len(self.user_encoder)
+        
+        self.valid_data = train_dataset.valid_data
+        rows, cols = self.valid_data['user'], self.valid_data['item']
+        self.valid_input_data = sp.csr_matrix(
+            (np.ones_like(rows), (rows, cols)), 
+            dtype='float32',
+            shape=(self.n_users, self.n_items))
 
-        self.df["item_idx"] = self.df["item"].apply(lambda x: self.item_encoder[x])
-        self.df["user_idx"] = self.df["user"].apply(lambda x: self.user_encoder[x])
+        self.valid_input_data = self.valid_input_data.toarray()
+    
+    def __len__(self):
+        return self.n_users
 
-        self.user_train, self.user_valid = self.generate_sequence_data()
+    def __getitem__(self, idx):
+        return self.train_input_data[idx, :], self.valid_input_data[idx,:]
 
-    def generate_encoder_decoder(self, col: str) -> dict:
-        """
-        encoder, decoder 생성
-        Args:
-            col (str): 생성할 columns 명
-        Returns:
-            dict: 생성된 user encoder, decoder
-        """
 
-        encoder = {}
-        decoder = {}
-        ids = self.df[col].unique()
+class RecVAEDataset(Dataset):
+    def __init__(self, args, mode = 'train'):
+        self.path = args.data_dir
 
-        for idx, _id in enumerate(ids):
-            encoder[_id] = idx
-            decoder[idx] = _id
+        #get number of users and items
+        self.n_users, self.n_items = 0, 0
+        self.n_train, self.n_test = 0, 0
+        self.neg_pools = {}
+        self.exist_users = []
 
-        return encoder, decoder
+        # data_path는 사용자의 디렉토리에 맞게 설정해야 합니다.
+        data_path = os.path.join(self.path, args.train_data)
+        genre_path = os.path.join(self.path, 'genres.tsv')
+        df = pd.read_csv(data_path)
+        genre_data = pd.read_csv(genre_path, sep='\t')
 
-    def generate_sequence_data(self) -> dict:
-        """
-        sequence_data 생성
-        Returns:
-            dict: train user sequence / valid user sequence
-        """
-        users = defaultdict(list)
-        user_train = {}
-        user_valid = {}
-        for user, item, time in zip(
-            self.df["user_idx"], self.df["item_idx"], self.df["time"]
-        ):
-            users[user].append(item)
+        ############### item based outlier ###############
+        # # 아이템 기준 outlier 제거 - 이용율 0.3% 미만인 아이템 제거 (영구히 제거)
+        # item_freq_df = (df.groupby('item')['user'].count()/df.user.nunique()).reset_index()
+        # item_freq_df.columns = ['item', 'item_freq']
+        # # df = df.merge(item_freq_df, on='item').query('item_freq > 0.003')
+        # # df = df.merge(item_freq_df, on='item').query('item_freq > 0.005')
+        # df = df.merge(item_freq_df, on='item').query('item_freq > 0.01')
+        # del df['item_freq'] # 소명을 다하고 삭제! 
 
-        for user in users:
-            np.random.seed(self.args.seed)
+        self.ratings_df = df.copy() # for submission
+        self.n_train = len(df)
 
-            user_total = users[user]
-            valid = np.random.choice(
-                user_total, size=self.margs.valid_samples, replace=False
-            ).tolist()
-            train = list(set(user_total) - set(valid))
+        item_ids = df['item'].unique() # 아이템 고유 번호 리스트
+        user_ids = df['user'].unique() # 유저 고유 번호 리스트
+        self.n_items, self.n_users = len(item_ids), len(user_ids)
+        
+        # user, item indexing
+        # item2idx = pd.Series(data=np.arange(len(item_ids))+1, index=item_ids) # item re-indexing (1~num_item) ; 아이템을 1부터 설정하는이유? 0을 아무것도 아닌 것으로 blank 하기 위해서
+        self.item2idx = pd.Series(data=np.arange(len(item_ids)), index=item_ids) # item re-indexing (0~num_item-1) ; 아이템을 1부터 설정하는이유? 0을 아무것도 아닌 것으로 blank 하기 위해서
+        self.user2idx = pd.Series(data=np.arange(len(user_ids)), index=user_ids) # user re-indexing (0~num_user-1)
 
-            user_train[user] = train
-            user_valid[user] = valid  # valid_samples 개수 만큼 검증에 활용 (현재 Task와 가장 유사하게)
+        # dataframe indexing
+        df = pd.merge(df, pd.DataFrame({'item': item_ids, 'item_idx': self.item2idx[item_ids].values}), on='item', how='inner')
+        df = pd.merge(df, pd.DataFrame({'user': user_ids, 'user_idx': self.user2idx[user_ids].values}), on='user', how='inner')
+        df.sort_values(['user_idx', 'time'], inplace=True)
+        genre_data = df.merge(genre_data, on = 'item').copy()
+        del df['item'], df['user']
 
-        return user_train, user_valid
+        self.exist_items = list(df['item_idx'].unique())
+        self.exist_users = list(df['user_idx'].unique())
 
-    def get_train_valid_data(self):
-        return self.user_train, self.user_valid
+        ############### Used by Sampler ###############
+        # # 1. user-based outlier - 상위 20퍼센트 영화를 본 친구들 Weight=0 지정
+        # self.user_weights = np.ones_like(self.exist_users)
+        # outlier_users = df['user_idx'].unique()[df.groupby('user_idx').item_idx.count()/df['item_idx'].nunique() >= 0.4]
+        # self.user_weights[outlier_users] = 0
 
-    def make_matrix(self, user_list, train=True):
-        """
-        user_item_dict를 바탕으로 행렬 생성
-        """
-        mat = torch.zeros(size=(user_list.size(0), self.num_item))
-        for idx, user in enumerate(user_list):
-            if train:
-                mat[idx, self.user_train[user.item()]] = 1
-            else:
-                mat[
-                    idx, self.user_train[user.item()] + self.user_valid[user.item()]
-                ] = 1
-        return mat
+        t1 = time()
+        self.train_items, self.valid_items = {}, {}
+        
+        items = df.groupby("user_idx")["item_idx"].apply(list) # 유저 아이디 상관 없이, 순서대로 
+        if mode == 'train':
+            print('Creating interaction Train/ Vaild Split...')
+            for uid, item in enumerate(items):            
+                num_u_valid_items = min(int(len(item)*0.125), 10) # 유저가 소비한 아이템의 12.5%, 그리고 최대 10개의 데이터셋을 무작위로 Validation Set으로 활용한다.
+                ####### Original method : RANDOM #######
+                # u_valid_items = np.random.choice(item, size=num_u_valid_items, replace=False)
+                # self.valid_items[uid] = u_valid_items
+                # self.train_items[uid] = list(set(item) - set(u_valid_items))
 
-    def make_sparse_matrix(self, test=False):
-        X = sp.dok_matrix((self.num_user, self.num_item), dtype=np.float32)
+                ####### method-1 : Last sequence ####### 마지막 sequence에 있는 정보를 제거
+                # u_valid_items = item[-num_u_valid_items:]
+                # self.valid_items[uid] = u_valid_items
+                # self.train_items[uid] = list(set(item) - set(u_valid_items))
 
-        for user in self.user_train.keys():
-            item_list = self.user_train[user]
-            X[user, item_list] = 1.0
+                ####### method-2 : hybrid ####### 마지막꺼:무작위= 1:1
+                # num_random = int(num_u_valid_items//2 + num_u_valid_items%2) # 홀수일때는, 무작위로 뽑는것이 1개 더 많게
+                # num_last = int(num_u_valid_items - num_random)
+                # last_items = item[-num_last:]
+                # random_items = np.random.choice(item[:-num_last], size=num_random, replace=False).tolist()
+                # u_valid_items = random_items + last_items
+                # self.valid_items[uid] = u_valid_items
+                # self.train_items[uid] = list(set(item) - set(u_valid_items))
 
-        if test:
-            for user in self.user_valid.keys():
-                item_list = self.user_valid[user]
-                X[user, item_list] = 1.0
+                ####### method-3 : hybrid ####### 마지막꺼:무작위= 6:4
+                num_random = np.floor(num_u_valid_items*0.6).astype(int) # 홀수일때는, 무작위로 뽑는것이 1개 더 많게
+                num_last = int(num_u_valid_items - num_random)
+                last_items = item[-num_last:]
+                random_items = np.random.choice(item[:-num_last], size=num_random, replace=False).tolist()
+                u_valid_items = random_items + last_items
+                self.valid_items[uid] = u_valid_items
+                self.train_items[uid] = list(set(item) - set(u_valid_items))
 
-        return X.tocsr()
+            self.train_data = pd.concat({k: pd.Series(v) for k, v in self.train_items.items()}).reset_index(0)
+            self.train_data.columns = ['user', 'item']
+
+            self.valid_data = pd.concat({k: pd.Series(v) for k, v in self.valid_items.items()}).reset_index(0)
+            self.valid_data.columns = ['user', 'item']
+        
+        if mode == 'train_all': #else
+            print('Preparing interaction all train set')
+            # for uid, item in enumerate(items):            
+            #     self.train_items[uid] = item
+
+            # self.train_data = pd.concat({k: pd.Series(v) for k, v in train_items.items()})
+            # self.train_data.reset_index(0, inplace=True)
+            # self.train_data.columns = ['user', 'item']
+            self.train_data = pd.DataFrame()
+            self.train_data['user'] = df['user_idx']
+            self.train_data['item'] = df['item_idx']
+
+        print('Train/Vaild Split Complete. Takes in', time() - t1, 'sec')
+        
+        rows, cols = self.train_data['user'], self.train_data['item']
+        self.train_input_data = sp.csr_matrix(
+            (np.ones_like(rows), (rows, cols)), 
+            dtype='float32',
+            shape=(self.n_users, self.n_items))
+        self.train_input_data = self.train_input_data.toarray()
+
+        print('Making Genre filter ... ')
+        genre2item = genre_data.groupby('genre')['item_idx'].apply(set).apply(list)
+        # user2genre = genre_data.groupby('user_idx')['genre'].apply(set).apply(list)
+
+        genre_data_freq = genre_data.groupby('user_idx')['genre'].value_counts(normalize=True)
+        genre_data_freq_over_5p = genre_data_freq[genre_data_freq > 0.005].reset_index('user_idx')
+        genre_data_freq_over_5p.columns = ['user_idx', 'tobedroped']
+        genre_data_freq_over_5p = genre_data_freq_over_5p.drop('tobedroped', axis = 1).reset_index()
+        user2genre = genre_data_freq_over_5p.groupby('user_idx')['genre'].apply(set).apply(list)
+
+        genre2item_dict = genre2item.to_dict()
+        all_set_genre = set(genre_data['genre'].unique())
+        user_genre_filter_dict = {}
+        for user, genres in tqdm(enumerate(user2genre)):
+            unseen_genres = all_set_genre - set(genres) # set
+            unseen_genres_item = set(sum([genre2item_dict[genre] for genre in unseen_genres], []))
+            user_genre_filter_dict[user] = pd.Series(list(unseen_genres_item), dtype=np.int32)
+
+        user_genre_filter_df = pd.concat(user_genre_filter_dict).reset_index(0)
+        user_genre_filter_df.columns = ['user', 'item']
+        user_genre_filter_df.index = range(len(user_genre_filter_df))
+
+        rows, cols = user_genre_filter_df['user'], user_genre_filter_df['item']
+        self.user_genre_filter = sp.csr_matrix(
+            (np.ones_like(rows), (rows, cols)), 
+            dtype='float32',
+            shape=(self.n_users, self.n_items))
+        self.user_genre_filter = self.user_genre_filter.toarray()
+
+
+    def __len__(self):
+        return self.n_users
+
+    def __getitem__(self, idx):
+        return self.train_input_data[idx,:]
+
+class RecVAEValidDataset(Dataset):
+    def __init__(self, train_dataset, genre_filter = False):
+        self.n_users = train_dataset.n_users
+        self.n_items = train_dataset.n_items
+        self.train_input_data = train_dataset.train_input_data
+        self.user_genre_filter = train_dataset.user_genre_filter
+        self.genre_filter = genre_filter
+
+    
+        self.valid_data = train_dataset.valid_data
+        rows, cols = self.valid_data['user'], self.valid_data['item']
+        self.valid_input_data = sp.csr_matrix(
+            (np.ones_like(rows), (rows, cols)), 
+            dtype='float32',
+            shape=(self.n_users, self.n_items))
+
+        self.valid_input_data = self.valid_input_data.toarray()
+    
+    def __len__(self):
+        return self.n_users
+
+    def __getitem__(self, idx):
+        input_data = self.train_input_data[idx, :]
+        label_data = self.valid_input_data[idx,:]
+        if self.genre_filter:
+            genre_filter = (1-self.user_genre_filter[idx,:]) > 0
+            label_data =  np.logical_and(label_data, genre_filter).astype(np.float32)
+        return input_data, label_data
+
+class BeforeNoiseUnderSamplingDataset(RecVAEDataset):
+    def __init__(self, path='../data/', mode='train'):
+        super().__init__(path, mode)
+
+    # def noise_without_pos(self, u, num):
+    #     pos_items = self.train_input_data[u]
+    #     # n_pos_items = len(pos_items)
+    #     pos_batch = []
+    #     while True:
+    #         if len(pos_batch) == num: break
+    #         pos_id = np.random.randint(low=0, high=n_pos_items, size=1)[0]
+    #         pos_i_id = pos_items[pos_id]
+
+    #         if pos_i_id not in pos_batch:
+    #             pos_batch.append(pos_i_id)
+    #     return pos_batch
+
+
+    def __getitem__(self, idx):
+        # noise = np.random.choice(2, size=[*self.train_input_data.shape], p=[0.9, 0.1])
+        # train_input_data_noised = self.train_input_data - noise
+        # train_input_data_noised[train_input_data_noised < 0] = 0
+        # return train_input_data_noised[idx,:]
+        # noise = np.random.choice(2, size=[*self.train_input_data.shape], p=[0.9, 0.1])
+        # noise = np.random.choice(2, size= len(self.train_input_data[idx,:]),  p=[0.9, 0.1]).astype(np.float32)
+        # train_input_data_noised = self.train_input_data + noise
+        # train_input_data_noised[train_input_data_noised < 0] = 0
+        return self.train_input_data[idx,:], np.random.randint(0,2,size=self.train_input_data.shape[1]).astype(np.float32)

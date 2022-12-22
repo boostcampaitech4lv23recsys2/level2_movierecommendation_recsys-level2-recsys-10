@@ -13,7 +13,7 @@ class Trainer:
     def __init__(
         self,
         model,
-        criterion,
+        # criterion,
         optimizer,
         train_loader,
         valid_loader,
@@ -23,20 +23,19 @@ class Trainer:
         # vad_data_te, 
         # test_data_tr, 
         # test_data_te,
-        submission_data,
+        # submission_data,
         args,
     ):
-
         self.args = args
-        self.criterion = criterion
+        self.model = model
+        if self.args.device=="cuda":
+            self.model.cuda()
+
+        # self.criterion = model.loss_function
         self.optimizer = optimizer
         # self.cuda_condition = torch.cuda.is_available() and not self.args.cuda
         # self.device = torch.device("cuda" if self.cuda_condition else "cpu")
         self.update_count = 0
-
-        self.model = model
-        if self.args.device=="cuda":
-            self.model.cuda()
 
         # Setting the train and test data loader
         # self.train_data = train_data
@@ -46,13 +45,13 @@ class Trainer:
         # self.test_data_te = test_data_te
         self.train_loader = train_loader
         self.valid_loader = valid_loader
-        self.submission_data = submission_data
+        # self.submission_data = submission_data
 
         print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
         # self.criterion = nn.BCELoss()
 
 
-    def train(self, epoch, is_VAE = False):
+    def train(self, epoch, model_name):
         # Turn on training model
         self.model.train()
         train_loss = 0.0
@@ -60,25 +59,43 @@ class Trainer:
         
         for batch_idx, batch_data in enumerate(self.train_loader):
             input_data = batch_data.to(self.args.device)
-            self.optimizer.zero_grad()
 
-            if is_VAE:
+            if model_name == "multiVAE":
+                self.optimizer.zero_grad()
                 if self.args.total_anneal_steps > 0:
                     anneal = min(self.args.anneal_cap, 
                                 1. * self.update_count / self.args.total_anneal_steps)
                 else:
                     anneal = self.args.anneal_cap
-
                 recon_batch, mu, logvar = self.model(input_data)
-                loss = self.criterion(recon_batch, input_data, mu, logvar, anneal)
-            else:
+                loss = self.model.loss_function(recon_batch, input_data, mu, logvar, anneal)
+                
+                loss.backward()
+                self.optimizer.step()
+                train_loss += loss.item()
+            elif model_name == "multiDAE":
+                self.optimizer.zero_grad()
                 recon_batch = self.model(input_data)
-                loss = self.criterion(recon_batch, input_data)
+                loss = self.model.loss_function(recon_batch, input_data)
+                
+                loss.backward()
+                self.optimizer.step()
+                train_loss += loss.item()
+            elif model_name == "recVAE":
+                for opt in self.optimizer:
+                    opt.zero_grad()
+                recon_batch, mu, logvar = self.model(input_data)
+                _, loss = self.model.loss_function(recon_batch, input_data, mu, logvar, 
+                                    self.args.beta, self.args.gamma)
+                
+                loss.backward()
+                for opt in self.optimizer:
+                    opt.step()
+                train_loss += loss.item()
 
-            loss.backward()
-            train_loss += loss.item()
-            self.optimizer.step()
-
+            
+            
+            
             self.update_count += 1
 
             if batch_idx % self.args.log_freq == 0 and batch_idx > 0:
@@ -93,7 +110,7 @@ class Trainer:
                 train_loss = 0.0
 
 
-    def evaluate(self, is_VAE=False):
+    def evaluate(self, model_name):
         # Turn on evaluation mode
         self.model.eval()
         total_loss = 0.0
@@ -107,7 +124,7 @@ class Trainer:
                 input_data = input_data.to(self.args.device)
                 label_data = label_data.to(self.args.device)
                 label_data = label_data.cpu().numpy()
-                if is_VAE :
+                if model_name == "multiVAE" :
                     if self.args.total_anneal_steps > 0:
                         anneal = min(self.args.anneal_cap, 
                                         1. * self.update_count / self.args.total_anneal_steps)
@@ -115,11 +132,13 @@ class Trainer:
                         anneal = self.args.anneal_cap
                 
                     recon_batch, mu, logvar = self.model(input_data)
-                    loss = self.criterion(recon_batch, input_data, mu, logvar, anneal)
-
-                else :
+                    loss = self.model.loss_function(recon_batch, input_data, mu, logvar, anneal)
+                elif model_name == "multiDAE" :
                     recon_batch = self.model(input_data)
-                    loss = self.criterion(recon_batch, input_data)
+                    loss = self.model.loss_function(recon_batch, input_data)
+                elif model_name == "recVAE":
+                    recon_batch, mu, logvar = self.model(input_data)
+                    _, loss = self.model.loss_function(recon_batch, input_data, mu, logvar, gamma=1, beta=None)
 
                 total_loss += loss.item()
                 recon_batch = recon_batch.cpu().numpy()
