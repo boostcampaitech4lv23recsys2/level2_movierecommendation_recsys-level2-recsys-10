@@ -15,48 +15,38 @@ class Trainer:
         model,
         criterion,
         optimizer,
-        # train_dataloader,
-        # eval_dataloader,
+        train_loader,
+        valid_loader,
         # test_dataloader,
-        train_data, 
-        vad_data_tr, 
-        vad_data_te, 
-        test_data_tr, 
-        test_data_te,
+        # train_data, 
+        # vad_data_tr, 
+        # vad_data_te, 
+        # test_data_tr, 
+        # test_data_te,
         submission_data,
         args,
     ):
 
         self.args = args
         self.criterion = criterion
-        self.cuda_condition = torch.cuda.is_available() and not self.args.cuda
+        self.optimizer = optimizer
+        # self.cuda_condition = torch.cuda.is_available() and not self.args.cuda
         # self.device = torch.device("cuda" if self.cuda_condition else "cpu")
         self.update_count = 0
 
         self.model = model
-        if self.cuda_condition:
+        if self.args.device=="cuda":
             self.model.cuda()
 
         # Setting the train and test data loader
-        self.train_data = train_data
-        self.vad_data_tr = vad_data_tr
-        self.vad_data_te = vad_data_te
-        self.test_data_tr = test_data_tr
-        self.test_data_te = test_data_te
+        # self.train_data = train_data
+        # self.vad_data_tr = vad_data_tr
+        # self.vad_data_te = vad_data_te
+        # self.test_data_tr = test_data_tr
+        # self.test_data_te = test_data_te
+        self.train_loader = train_loader
+        self.valid_loader = valid_loader
         self.submission_data = submission_data
-
-        self.N = train_data.shape[0]
-        self.idxlist = list(range(self.N))
-
-        self.data_name = self.args.data_name
-        # betas = (self.args.adam_beta1, self.args.adam_beta2)
-        # self.optim = Adam(
-        #     self.model.parameters(),
-        #     lr=self.args.lr,
-        #     betas=betas,
-        #     weight_decay=self.args.weight_decay,
-        # )
-        self.optimizer = optimizer
 
         print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
         # self.criterion = nn.BCELoss()
@@ -67,14 +57,9 @@ class Trainer:
         self.model.train()
         train_loss = 0.0
         start_time = time.time()
-
-        np.random.shuffle(self.idxlist)
         
-        for batch_idx, start_idx in enumerate(range(0, self.N, self.args.batch_size)):
-            # device = torch.device("cuda" if self.args.cuda else "cpu")
-            end_idx = min(start_idx + self.args.batch_size, self.N)
-            data = self.train_data[self.idxlist[start_idx:end_idx]]
-            data = self.naive_sparse2tensor(data).to(self.args.device)
+        for batch_idx, batch_data in enumerate(self.train_loader):
+            input_data = batch_data.to(self.args.device)
             self.optimizer.zero_grad()
 
             if is_VAE:
@@ -84,16 +69,11 @@ class Trainer:
                 else:
                     anneal = self.args.anneal_cap
 
-                #TODO
-                #model에 입력 출력 코드를 작성해주세요
-                #loss 함수를 설정해주세요
-                self.optimizer.zero_grad()
-                recon_batch, mu, logvar = self.model(data)
-                
-                loss = self.criterion(recon_batch, data, mu, logvar, anneal)
+                recon_batch, mu, logvar = self.model(input_data)
+                loss = self.criterion(recon_batch, input_data, mu, logvar, anneal)
             else:
-                recon_batch = self.model(data)
-                loss = self.criterion(recon_batch, data)
+                recon_batch = self.model(input_data)
+                loss = self.criterion(recon_batch, input_data)
 
             loss.backward()
             train_loss += loss.item()
@@ -105,7 +85,7 @@ class Trainer:
                 elapsed = time.time() - start_time
                 print('| epoch {:3d} | {:4d}/{:4d} batches | ms/batch {:4.2f} | '
                         'loss {:4.2f}'.format(
-                            epoch, batch_idx, len(range(0, self.N, self.args.batch_size)),
+                            epoch, batch_idx, len(range(0, 6807, self.args.batch_size)),
                             elapsed * 1000 / self.args.log_freq,
                             train_loss / self.args.log_freq))
 
@@ -117,20 +97,16 @@ class Trainer:
         # Turn on evaluation mode
         self.model.eval()
         total_loss = 0.0
-        # global update_count
-        e_idxlist = list(range(self.vad_data_tr.shape[0]))
-        e_N = self.vad_data_tr.shape[0]
-        n100_list = []
+
+        r10_list = []
         r20_list = []
-        r50_list = []
         
         with torch.no_grad():
-            for start_idx in range(0, e_N, self.args.batch_size):
-                end_idx = min(start_idx + self.args.batch_size, self.N)
-                data = self.vad_data_tr[e_idxlist[start_idx:end_idx]]
-                heldout_data = self.vad_data_te[e_idxlist[start_idx:end_idx]]
-
-                data_tensor = self.naive_sparse2tensor(data).to(self.args.device)
+            for batch_data in self.valid_loader:
+                input_data, label_data = batch_data # label_data: 오로지 정답지로만 사용
+                input_data = input_data.to(self.args.device)
+                label_data = label_data.to(self.args.device)
+                label_data = label_data.cpu().numpy()
                 if is_VAE :
                     if self.args.total_anneal_steps > 0:
                         anneal = min(self.args.anneal_cap, 
@@ -138,37 +114,30 @@ class Trainer:
                     else:
                         anneal = self.args.anneal_cap
                 
-                    #TODO
-                    #model에 입력 출력 코드를 작성해주세요
-                    #loss 함수를 설정해주세요
-                    recon_batch, mu, logvar = self.model(data_tensor)
-
-                    loss = self.criterion(recon_batch, data_tensor, mu, logvar, anneal)
+                    recon_batch, mu, logvar = self.model(input_data)
+                    loss = self.criterion(recon_batch, input_data, mu, logvar, anneal)
 
                 else :
-                    recon_batch = self.model(data_tensor)
-                    loss = self.criterion(recon_batch, data_tensor)
+                    recon_batch = self.model(input_data)
+                    loss = self.criterion(recon_batch, input_data)
 
                 total_loss += loss.item()
-
-                # Exclude examples from training set
                 recon_batch = recon_batch.cpu().numpy()
-                recon_batch[data.nonzero()] = -np.inf
+                recon_batch[input_data.cpu().numpy().nonzero()] = -np.inf
 
-                n100 = NDCG_binary_at_k_batch(recon_batch, heldout_data, 100)
-                r20 = Recall_at_k_batch(recon_batch, heldout_data, 20)
-                r50 = Recall_at_k_batch(recon_batch, heldout_data, 50)
+                # n100 = NDCG_binary_at_k_batch(recon_batch, heldout_data, 100)
+                r10 = Recall_at_k_batch(recon_batch, label_data, 10)
+                r20 = Recall_at_k_batch(recon_batch, label_data, 20)
 
-                n100_list.append(n100)
+                r10_list.append(r10)
                 r20_list.append(r20)
-                r50_list.append(r50)
     
-        total_loss /= len(range(0, e_N, self.args.batch_size))
-        n100_list = np.concatenate(n100_list)
+        total_loss /= len(range(0, 6807, self.args.batch_size)) #6807????
+        # n100_list = np.concatenate(n100_list)
+        r10_list = np.concatenate(r10_list)
         r20_list = np.concatenate(r20_list)
-        r50_list = np.concatenate(r50_list)
 
-        return total_loss, np.mean(n100_list), np.mean(r20_list), np.mean(r50_list)
+        return total_loss, np.mean(r10_list), np.mean(r20_list)
 
 
     # def sparse2torch_sparse(self, data):
@@ -188,5 +157,5 @@ class Trainer:
     #     return t
 
 
-    def naive_sparse2tensor(self, data):
-        return torch.FloatTensor(data.toarray())
+    # def naive_sparse2tensor(self, data):
+    #     return torch.FloatTensor(data.toarray())

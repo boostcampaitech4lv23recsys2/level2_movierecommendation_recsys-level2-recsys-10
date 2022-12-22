@@ -2,6 +2,10 @@ import json
 import math
 import os
 import random
+import re
+
+from pathlib import Path
+import glob
 
 import numpy as np
 import bottleneck as bn
@@ -27,6 +31,27 @@ def check_path(path):
         os.makedirs(path)
         print(f"{path} created")
 
+
+def increment_path(path, exist_ok=False):
+    """ Automatically increment path, i.e. runs/exp --> runs/exp0, runs/exp1 etc.
+    Args:
+        path (str or pathlib.Path): f"{model_dir}/{args.name}".
+        exist_ok (bool): whether increment path (increment if False).
+    """
+    path = Path(path)
+    if (path.exists() and exist_ok) or (not path.exists()):
+        return str(path)
+    else:
+        dirs = glob.glob(f"{path}*")
+        matches = [re.search(rf"%s(\d+)" % path.stem, d) for d in dirs]
+        i = [int(m.groups()[0]) for m in matches if m]
+        n = max(i) + 1 if i else 2
+        return f"{path}{n}"
+
+
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 def neg_sample(item_set:set, item_size:int):
     """1부터 item_size - 1 까지의 값에서 제공된 item_set 에 없는 값을 반환한다. 
@@ -402,14 +427,14 @@ def NDCG_binary_at_k_batch(X_pred, heldout_batch, k=100):
     return DCG / IDCG
 
 
-def Recall_at_k_batch(X_pred, heldout_batch, k=100):
+def Recall_at_k_batch(X_pred, label_data, k=100):
     batch_users = X_pred.shape[0]
 
     idx = bn.argpartition(-X_pred, k, axis=1)
     X_pred_binary = np.zeros_like(X_pred, dtype=bool)
     X_pred_binary[np.arange(batch_users)[:, np.newaxis], idx[:, :k]] = True
 
-    X_true_binary = (heldout_batch > 0).toarray()
+    X_true_binary = (label_data > 0)
     tmp = (np.logical_and(X_true_binary, X_pred_binary).sum(axis=1)).astype(
         np.float32)
     recall = tmp / np.minimum(k, X_true_binary.sum(axis=1))
