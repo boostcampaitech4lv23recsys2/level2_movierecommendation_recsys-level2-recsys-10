@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 
 from preprocessing import preprocessing
-from datasets import AEDatasets, multiVAEDatasets, MatrixDataset
+from datasets import AEDataSet, multiVAEDataset, MatrixDataset
 from data_loader import DataLoader
 from trainer import Trainer
 from utils import (
@@ -27,7 +27,7 @@ from models import (
     MultiVAE,
     MultiDAE,
     EASE,
-    recVAE
+    # recVAE
 )
 
 

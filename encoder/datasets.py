@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-class multiVAEDatasets(Dataset):
+class multiVAEDataset(Dataset):
     def __init__(self, args, data, num_user, user_activity, data_type="train") -> None:
         super().__init__()
         self.args = args
