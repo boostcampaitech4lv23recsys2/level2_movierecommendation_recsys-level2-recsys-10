@@ -1,5 +1,5 @@
 import numpy as np
-import time
+from time import time
 import torch
 import torch.nn as nn
 import tqdm
@@ -56,7 +56,7 @@ class Trainer:
         # Turn on training model
         self.model.train()
         train_loss = 0.0
-        start_time = time.time()
+        start_time = time()
         
         for batch_idx, batch_data in enumerate(self.train_loader):
             input_data = batch_data.to(self.args.device)
@@ -82,14 +82,14 @@ class Trainer:
             self.update_count += 1
 
             if batch_idx % self.args.log_freq == 0 and batch_idx > 0:
-                elapsed = time.time() - start_time
+                elapsed = time() - start_time
                 print('| epoch {:3d} | {:4d}/{:4d} batches | ms/batch {:4.2f} | '
                         'loss {:4.2f}'.format(
                             epoch, batch_idx, len(range(0, 6807, self.args.batch_size)),
                             elapsed * 1000 / self.args.log_freq,
                             train_loss / self.args.log_freq))
 
-                start_time = time.time()
+                start_time = time()
                 train_loss = 0.0
 
 

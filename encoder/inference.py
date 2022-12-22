@@ -83,7 +83,10 @@ def main():
 
     test_data_tensor = torch.FloatTensor(data.toarray()).to(args.device)
 
-    recon_batch, mu, logvar = model(test_data_tensor)
+    if args.model_name == 'multiVAE':
+        recon_batch, _, _ = model(test_data_tensor)
+    elif args.model_name == 'multiDAE':
+        recon_batch = model(test_data_tensor)
 
     id2show = dict(zip(show2id.values(),show2id.keys()))
     id2profile = dict(zip(profile2id.values(),profile2id.keys()))
