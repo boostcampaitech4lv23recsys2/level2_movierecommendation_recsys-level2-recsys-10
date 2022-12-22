@@ -3,6 +3,12 @@ import torch.nn as nn
 
 from modules import Encoder, LayerNorm
 
+from modules import ScaledDotProductAttention, 
+                    MultiHeadAttention,
+                    PositionwiseFeedForward,
+                    BERT4RecBlock
+
+
 
 class S3RecModel(nn.Module):
     # https://github.com/RUCAIBox/CIKM2020-S3Rec/blob/master/model.PNG
@@ -238,3 +244,62 @@ class S3RecModel(nn.Module):
             module.weight.data.fill_(1.0)
         if isinstance(module, nn.Linear) and module.bias is not None:
             module.bias.data.zero_()
+            
+
+class BERT4Rec(nn.Module):
+    def __init__(self, num_user, num_item, hidden_units, num_heads, num_layers, max_len, dropout_rate, device):
+        super(BERT4Rec, self).__init__()
+
+        self.num_user = num_user
+        self.num_item = num_item
+        self.hidden_units = hidden_units
+        self.num_heads = num_heads
+        self.num_layers = num_layers 
+        self.device = device
+        
+        self.item_emb = nn.Embedding( self.num_item+2, max_len, padding_idx = 0  )  # TODO2: mask와 padding을 고려하여 embedding을 생성해보세요.
+        self.pos_emb = nn.Embedding(max_len, hidden_units) # learnable positional encoding
+        self.dropout = nn.Dropout(dropout_rate)
+        self.emb_layernorm = nn.LayerNorm(hidden_units, eps=1e-6)
+        
+        self.blocks = nn.ModuleList([BERT4RecBlock(num_heads, hidden_units, dropout_rate) for _ in range(num_layers)])
+        self.out = nn.Linear(self.hidden_units, self.num_item + 1 )  # TODO3: 예측을 위한 output layer를 구현해보세요. (num_item 주의)
+        
+    def forward(self, log_seqs):
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.device))
+        positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
+        """ position
+        [[ 0  1  2 ... 47 48 49]
+         [ 0  1  2 ... 47 48 49]
+         [ 0  1  2 ... 47 48 49]
+         ...
+         [ 0  1  2 ... 47 48 49]
+         [ 0  1  2 ... 47 48 49]
+         [ 0  1  2 ... 47 48 49]]
+        """
+        seqs += self.pos_emb(torch.LongTensor(positions).to(self.device))
+        seqs = self.emb_layernorm(self.dropout(seqs))
+        
+        """
+        ( 1 ) `torch.BoolTensor(log_seqs > 0)` 
+         - log_seqs 값이 0 보다 크면 True , 작으면 False 인 Tensor 를 생성
+         - Torch.Size([128, 50])
+        ( 2 ) `unsqueeze(1)` 
+         - (batch_size, 1, sequence_length)
+         - Torch.Size([128, 1, 50])
+
+        ( 3 ) `repeat(1, log_seqs.shape[1], 1)`
+         - (batch_size, sequence_length, sequence_length)
+         - Torch.Size([128, 50, 50])
+
+        ( 4 ) unsqueeze(1)
+         - (batch_size, 1, sequence_length, sequence_length)
+         - Torch.Size([128, 1, 50, 50])
+
+        """
+        
+        mask = torch.BoolTensor(log_seqs > 0).unsqueeze(1).repeat(1, log_seqs.shape[1], 1).unsqueeze(1).to(self.device) # mask for zero pad
+        for block in self.blocks:
+            seqs, attn_dist = block(seqs, mask)
+        out = self.out(seqs)
+        return out
