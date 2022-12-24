@@ -52,8 +52,8 @@ class PretrainDataset(Dataset):
                     masked_item_sequence.append(item)
                 
                 if self.args.neg_from_pop:
-                    # 현재 item_set 에 없는 item 을 추가 
-                    neg_items.append(neg_sample(item_set, self.args.item_size))
+                    # 현재 item_set 에 없는 item 을 추가
+                    neg_items.append(neg_sample_from_popular_items(item_set, self.popular_items, self.max_len))
                 else:
                     neg_items.append(neg_sample(item_set, self.args.item_size))
 
