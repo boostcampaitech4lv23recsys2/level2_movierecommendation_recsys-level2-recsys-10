@@ -22,7 +22,7 @@ def parse_args():
     
     parser.add_argument("--sweep", default="False", type=bool)
     parser.add_argument("--random_sort", default=0.0, type=float)
-    parser.add_argument("--neg_from_pop", default=0.0, type=float)
+    parser.add_argument("--neg_from_pop", default=1, type=float)
     parser.add_argument("--loss_fn", default="cn", type=str)
     
     parser.add_argument("--data_dir", default="../data/train/", type=str)
