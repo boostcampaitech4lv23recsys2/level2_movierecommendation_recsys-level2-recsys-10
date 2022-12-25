@@ -177,16 +177,20 @@ def generate_submission_file(data_file, preds):
     )
 
 
-def get_user_seqs(data_file):
+def get_user_seqs(data_file, item2idx_, random_sort=0):
     rating_df = pd.read_csv(data_file)
+    rating_df['item'] = rating_df['item'].map(lambda x: item2idx_[x])
     lines = rating_df.groupby("user")["item"].apply(list)
     user_seq = []
     item_set = set()
     for line in lines:
 
         items = line
+        if random.random() < random_sort:
+            random.shuffle(items)
         user_seq.append(items)
         item_set = item_set | set(items)
+        
     max_item = max(item_set)
 
     num_users = len(lines)
