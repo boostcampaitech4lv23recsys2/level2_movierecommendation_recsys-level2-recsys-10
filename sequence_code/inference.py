@@ -13,6 +13,8 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs,
     set_seed,
+    item2idx_,
+    idx2item_,
 )
 
 from args import parse_args
@@ -27,7 +29,7 @@ def main(args):
     args.data_file = args.data_dir + "train_ratings.csv"
     item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
 
-    user_seq, max_item, _, _, submission_rating_matrix = get_user_seqs(args.data_file)
+    user_seq, max_item, _, _, submission_rating_matrix = get_user_seqs(args.data_file, item2idx_)
 
     item2attribute, attribute_size = get_item2attribute_json(item2attribute_file)
 
@@ -61,7 +63,7 @@ def main(args):
     print(f"Load model from {args.checkpoint_path} for submission!")
     preds = trainer.submission(0)
 
-    generate_submission_file(args.data_file, preds)
+    generate_submission_file(args.data_file, preds, idx2item_)
 
 
 if __name__ == "__main__":

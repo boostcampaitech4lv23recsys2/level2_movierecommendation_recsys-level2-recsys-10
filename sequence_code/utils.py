@@ -161,7 +161,7 @@ def generate_rating_matrix_submission(user_seq, num_users, num_items):
     return rating_matrix
 
 
-def generate_submission_file(data_file, preds):
+def generate_submission_file(data_file, preds, item2idx_):
 
     rating_df = pd.read_csv(data_file)
     users = rating_df["user"].unique()
@@ -170,7 +170,7 @@ def generate_submission_file(data_file, preds):
 
     for index, items in enumerate(preds):
         for item in items:
-            result.append((users[index], item))
+            result.append((users[index], item2idx_[item]))  # title index화한거 item으로 되돌리기
 
     pd.DataFrame(result, columns=["user", "item"]).to_csv(
         "output/submission.csv", index=False
