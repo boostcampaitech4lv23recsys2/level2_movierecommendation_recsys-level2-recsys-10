@@ -136,8 +136,10 @@ class PretrainDataset(Dataset):
 
 
 class SASRecDataset(Dataset):
-    def __init__(self, args, user_seq, test_neg_items=None, data_type="train"):
+    def __init__(self, args, elems, user_seq, test_neg_items=None, data_type="train"):
+        
         self.args = args
+        self.elems = elems
         self.user_seq = user_seq
         self.test_neg_items = test_neg_items
         self.data_type = data_type

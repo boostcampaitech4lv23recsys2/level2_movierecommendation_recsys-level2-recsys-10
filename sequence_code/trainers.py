@@ -316,3 +316,151 @@ class FinetuneTrainer(Trainer):
                 score, metrics = self.get_full_sort_score(epoch, answer_list, pred_list)
                 wandb.log(metrics, step=epoch)
                 return score, metrics
+            
+
+class Bert4RecTrainer(Trainer):
+    def __init__(
+        self,
+        model,
+        train_dataloader,
+        eval_dataloader,
+        test_dataloader,
+        submission_dataloader,
+        args,
+        criterion, #function
+
+    ):
+        super(Bert4RecTrainer, self).__init__(
+            model,
+            train_dataloader,
+            eval_dataloader,
+            test_dataloader,
+            submission_dataloader,
+            args,
+        )
+        
+        self.criterion = criterion
+        
+
+    def iteration(self, epoch, dataloader, mode="train"):
+        
+        if mode != "submission" and self.args.sweep==False:
+            wandb.watch(self.model, self.cross_entropy, log="parameters", log_freq=self.args.log_freq)
+            
+        # Setting the tqdm progress bar
+        
+        rec_data_iter = tqdm.tqdm(
+            enumerate(dataloader),
+            desc="Recommendation EP_%s:%d" % (mode, epoch),
+            total=len(dataloader),
+            bar_format="{l_bar}{r_bar}",
+        )
+        if mode == "train":
+            self.model.train()
+            rec_avg_loss = 0.0
+            rec_cur_loss = 0.0
+
+            # batch : log sequence and labels 
+            for i, batch in rec_data_iter:
+                # 0. batch_data will be sent into the device(GPU or CPU)
+                log_seqs, labels = batch
+                 # size matching
+                logits = logits.view(-1, logits.size(-1))   # [51200, 6808]
+                labels = labels.view(-1).to(device)         # 51200
+                
+                self.optim.zero_grad()
+                loss = self.criterion(logits, labels)
+                loss.backward()
+                self.optim.step()
+
+                rec_avg_loss += loss.item()
+                rec_cur_loss = loss.item()
+            
+            rec_avg_loss_per_len = rec_avg_loss / len(rec_data_iter)
+            post_fix = {
+                "epoch": epoch,
+                "rec_avg_loss": round(rec_avg_loss_per_len, 4),
+                "rec_cur_loss": round(rec_cur_loss, 4),
+            }
+            wandb.log(post_fix, step=epoch)
+
+            if (epoch + 1) % self.args.log_freq == 0:
+                print(str(post_fix))
+
+        else:
+            self.model.eval()
+
+            pred_list = None
+            answer_list = None
+            for i, batch in rec_data_iter:
+
+                log_seqs, labels = batch
+                logits = model(log_seqs)
+                
+                # 값이 낮은 순으로 index 를 뽑는다.
+                """
+                예를 들어 값이 [[8,1,7],[1,2,3]] 이면 
+                array.argsort() = [[1,2,0],[0,1,2]] 이고 
+                array.argsort().argsort() = [[2,0,1],[0,1,2]]
+                """
+                recommend_output = logits[:,:].argsort()[:,:,-1].view(-1)
+                 
+                 # size matching
+                logits = logits.view(-1, logits.size(-1))   # [51200, 6808]
+                labels = labels.view(-1).to(device)         # 51200
+                
+                loss = self.criterion(logits, labels)
+                
+                # labels 의 item 과 recommend output 의 item 이 동일하면 correct count 로 세줌
+                correct_cnt += torch.sum((labels == recommend_output) & (labels != 0))
+                masked_cnt += labels.count_nonzero()
+                valid_loss += loss  
+                
+            valid_loss_avg = valid_loss / len(valid_loader)
+            valid_acc = correct_cnt / masked_cnt
+            
+            if mode == "submission":
+                return [] # not implement
+            else:
+                score, metrics = self.get_full_sort_score(epoch, labels, recommend_output)
+                wandb.log(metrics, step=epoch)
+                return score, metrics
+                
+        # 맨 마지막 시점에서 item 10개 추천
+        def last_time(self,key, data, result) :
+            # key = user_index, data = input data(sequence), result = model output(probability)
+            t = result[-1] # dim = [1, 6808]
+            t[data[0]] = -np.inf # 이미 시청한 영화 제거
+            top_k_idx = np.argpartition(t, -10)[-10:] # top 10 proability 계산
+            rec_item_id = item_id[top_k_idx] # 영화 추출
+            user = user_id[key]
+            for item in rec_item_id :
+                final.append((user, item))
+                
+        def submission(self, epoch):
+            #inference 부분
+            print("\nstart inference..!")
+            max_len = self.args.max_len
+            final = list()
+            cnt = 0
+            for key in raw_data.keys() :
+
+                length = len(raw_data[key])
+                if length < max_len : 
+                    dif = max_len-length
+                    data = [0]*dif + raw_data[key][-length:]
+                else :
+                    data = raw_data[key][-max_len:]
+
+                data = torch.LongTensor(data).unsqueeze(dim=0)
+                result = model(data)[0].detach().cpu()
+                result = result[-min(length, max_len):] # 만약 시청 영화의 개수가 max_len보다 작다면, 시청 영화의 개수만큼 행 고려
+
+                last_time(key, data, result)
+                
+                cnt+=1
+                if cnt%5000 == 0 :
+                    print(f"{cnt}/31360 complete")
+
+            print("inference complete!")
+            return result

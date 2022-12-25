@@ -5,8 +5,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
-from datasets import SASRecDataset
-from models import S3RecModel
+from datasets import SASRecDataset, ClozeDataSet
+from models import S3RecModel, BERT4Rec
 from trainers import FinetuneTrainer
 from utils import (
     EarlyStopping,
@@ -83,57 +83,111 @@ def main():
     args.cuda_condition = torch.cuda.is_available() and not args.no_cuda
 
     args.data_file = args.data_dir + "train_ratings.csv"
-    item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
+    
+    """ SAS 종속
+    """
+    if "Finetune_full" == args.model_name : 
+        args = {}
+        args.item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
 
-    user_seq, max_item, valid_rating_matrix, test_rating_matrix, _ = get_user_seqs(
-        args.data_file
-    )
+        args.user_seq, args.max_item, args.valid_rating_matrix, args.test_rating_matrix, _ 
+        = get_user_seqs(
+            args.data_file
+        )
 
-    item2attribute, attribute_size = get_item2attribute_json(item2attribute_file)
+        args.item2attribute, args.attribute_size = get_item2attribute_json(item2attribute_file)
 
-    args.item_size = max_item + 2
-    args.mask_id = max_item + 1
-    args.attribute_size = attribute_size + 1
+        args.item_size = max_item + 2
+        args.mask_id = max_item + 1
+        args.attribute_size = attribute_size + 1
 
-    # save model args
-    args_str = f"{args.model_name}-{args.data_name}"
-    args.log_file = os.path.join(args.output_dir, args_str + ".txt")
-    print(str(args))
+        # save model args
+        args_str = f"{args.model_name}-{args.data_name}"
+        args.log_file = os.path.join(args.output_dir, args_str + ".txt")
+        print(str(args))
 
-    args.item2attribute = item2attribute
-    # set item score in train set to `0` in validation
-    args.train_matrix = valid_rating_matrix
+        args.item2attribute = item2attribute
+        # set item score in train set to `0` in validation
+        args.train_matrix = valid_rating_matrix
 
-    # save model
-    checkpoint = args_str + ".pt"
-    args.checkpoint_path = os.path.join(args.output_dir, checkpoint)
+        # save model
+        checkpoint = args_str + ".pt"
+        args.checkpoint_path = os.path.join(args.output_dir, checkpoint)
 
-    train_dataset = SASRecDataset(args, user_seq, data_type="train")
-    train_sampler = RandomSampler(train_dataset)
-    train_dataloader = DataLoader(
-        train_dataset, sampler=train_sampler, batch_size=args.batch_size
-    )
+        train_dataset = SASRecDataset(args, user_seq, data_type="train")
+        train_sampRandomSamplerler = (train_dataset)
+        train_dataloader = DataLoader(
+            train_dataset, sampler=train_sampler, batch_size=args.batch_size
+        )
 
-    eval_dataset = SASRecDataset(args, user_seq, data_type="valid")
-    eval_sampler = SequentialSampler(eval_dataset)
-    eval_dataloader = DataLoader(
-        eval_dataset, sampler=eval_sampler, batch_size=args.batch_size
-    )
+        eval_dataset = SASRecDataset(args, user_seq, data_type="valid")
+        eval_sampler = SequentialSampler(eval_dataset)
+        eval_dataloader = DataLoader(
+            eval_dataset, sampler=eval_sampler, batch_size=args.batch_size
+        )
 
-    test_dataset = SASRecDataset(args, user_seq, data_type="test")
-    test_sampler = SequentialSampler(test_dataset)
-    test_dataloader = DataLoader(
-        test_dataset, sampler=test_sampler, batch_size=args.batch_size
-    )
+        test_dataset = SASRecDataset(args, user_seq, data_type="test")
+        test_sampler = SequentialSampler(test_dataset)
+        test_dataloader = DataLoader(
+            test_dataset, sampler=test_sampler, batch_size=args.batch_size
+        )
+    
+    elif( "BERT4REC" == args.model ):
+        ############# 중요 #############
+        # data_path는 사용자의 디렉토리에 맞게 설정해야 합니다.
+        df = pd.read_csv(args.data_file)
+
+        item_ids = df['item'].unique()
+        user_ids = df['user'].unique()
+        num_item, num_user = len(item_ids), len(user_ids)
+        num_batch = num_user // batch_size
+
+        # user, item indexing
+        item2idx = pd.Series(data=np.arange(len(item_ids))+1, index=item_ids) # item re-indexing (1~num_item), num_item+1: mask idx
+        user2idx = pd.Series(data=np.arange(len(user_ids)), index=user_ids) # user re-indexing (0~num_user-1)
+
+        # dataframe indexing
+        df = pd.merge(df, pd.DataFrame({'item': item_ids, 'item_idx': item2idx[item_ids].values}), on='item', how='inner')
+        df = pd.merge(df, pd.DataFrame({'user': user_ids, 'user_idx': user2idx[user_ids].values}), on='user', how='inner')
+        df.sort_values(['user_idx', 'time'], inplace=True)
+        del df['item'], df['user'] 
+
+        # train set, valid set 생성
+        users = defaultdict(list) # defaultdict은 dictionary의 key가 없을때 default 값을 value로 반환
+        user_train = {}
+        user_valid = {}
+        for u, i, t in zip(df['user_idx'], df['item_idx'], df['time']):
+            users[u].append(i)
+
+        for user in users:
+            user_train[user] = users[user][:-1]
+            user_valid[user] = [users[user][-1]]
+
+        print(f'num users: {num_user}, num items: {num_item}')  
+        
+        seq_dataset = ClozeDataSet(user_train, num_user, num_item, max_len, mask_prob)
+        train_dataset, eval_dataset = torch.tuils.data.dataset.random_split(dataset, [80,20])
+        eval_dataset , test_dataset = torch.tuils.data.dataset.random_split(train_dataset, [10,10])
+
+        train_data_loader = DataLoader(dataset=train_dataset,batch_size=batch_size,shuffle=True,pin_memory = True)
+        eval_data_loader = DataLoader(dataset=eval_dataset,batch_size=batch_size,shuffle=True,pin_memory = True)
+        test_data_loader = DataLoader(dataset=test_dataset,batch_size=batch_size,shuffle=True,pin_memory = True)
     
     # train
     wandb.login()
-    with wandb.init(project="Movie_Rec_S3Rec_train", config=vars(args)):
-        model = S3RecModel(args=args)
+    with wandb.init(project=f"Movie_Rec_{args.model_name}_train", config=vars(args)):
+        if args.model_name == "ALL" :
+            model = S3RecModel(args=args)
 
-        trainer = FinetuneTrainer(
-            model, train_dataloader, eval_dataloader, test_dataloader, None, args
-        )
+            trainer = FinetuneTrainer(
+                model, train_dataloader, eval_dataloader, test_dataloader, None, args
+            )
+        elif args.model_name == "BERT4REC":
+            model = BERT4RecModel(args = args) 
+            
+            trainer = Bert4RecTrainer(
+                model, train_dataloader, eval_dataloader, test_dataloader, None, args
+            )
 
         print(args.using_pretrain)
         if args.using_pretrain:
@@ -159,15 +213,20 @@ def main():
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
-
-        trainer.args.train_matrix = test_rating_matrix
-        print("---------------Change to test_rating_matrix!-------------------")
-        # load the best model
-        # trainer.model.load_state_dict(torch.load(args.checkpoint_path))
-        trainer.model.load_state_dict(torch.load(os.path.join(args.output_dir, checkpoint.split('/')[-1])))
-        scores, result_info = trainer.test(0)
-        wandb.log(result_info, step=epoch+1)
-        print(result_info)
+            
+        if( "ALL" == args.model_name ):
+            print("---------------Change to test_rating_matrix!-------------------")
+            trainer.args.train_matrix = test_rating_matrix
+            # load the best model
+            # trainer.model.load_state_dict(torch.load(args.checkpoint_path))
+            trainer.model.load_state_dict(torch.load(os.path.join(args.output_dir, checkpoint.split('/')[-1])))
+            scores, result_info = trainer.test(0)
+            wandb.log(result_info, step=epoch+1)
+            print(result_info)
+        else : 
+            scores, result_info = trainer.test(0)
+            print(scores )            
+            
 
 
 if __name__ == "__main__":
