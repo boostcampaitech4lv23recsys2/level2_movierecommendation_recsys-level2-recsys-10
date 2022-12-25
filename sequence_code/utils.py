@@ -206,7 +206,7 @@ def get_user_seqs(data_file):
     )
 
 
-def get_user_seqs_long(data_file:str):
+def get_user_seqs_long(data_file:str,  item2idx_:dict, random_sort=0):
     """user가 본 item 기록이 있는 data file 을 받아서 sequence 정보를 반환한다. 
 
     Args:
@@ -218,6 +218,7 @@ def get_user_seqs_long(data_file:str):
         list: 전체 user 가 본 movie list ( 중복 O ) []
     """
     rating_df = pd.read_csv(data_file)
+    rating_df['item'] = rating_df['item'].map(lambda x: item2idx_[x]) # 모든 item을 title index로 변환
     # user id 로 group 하여 item 목록 추출 : pandas seriese
     lines = rating_df.groupby("user")["item"].apply(list)
     user_seq = []
@@ -226,6 +227,8 @@ def get_user_seqs_long(data_file:str):
     # 한 명의 user 가 본 item list 순회
     for line in lines:
         items = line
+        if random.random() < random_sort:   # 시청한 기록 shuffle / random_sort 기본값 0 / random.random() -> 0<=v<1
+            random.shuffle(items)
         long_sequence.extend(items)
         user_seq.append(items)
         item_set = item_set | set(items)
@@ -377,3 +380,28 @@ def idcg_k(k):
         return 1.0
     else:
         return res
+
+def get_popular_items(data_file, item2idx_, p):
+    rating_df = pd.read_csv(data_file)
+    rating_df['item'] = rating_df['item'].map(lambda x: item2idx_[x])
+    popular_items = list(rating_df["item"].value_counts().index)
+    return popular_items[:int(len(popular_items)*p)+1]
+
+def neg_sample_from_popular_items(item_set, popular_items, max_len):
+    sample = random.choice(popular_items)
+    while sample in item_set:
+        sample = random.choice(popular_items)
+    return sample
+
+def generate_item2idx():
+    item2idx = pd.read_csv('../data/train/item2idx.tsv', sep='\t', index_col=0, names=['item_id'])
+    idx2item = pd.read_csv('../data/train/item2idx.tsv', sep='\t', index_col=1, names=['item'])
+    item2idx_ = dict()
+    idx2item_ = dict()
+    for x in item2idx['item_id'].index[1:]:
+        item2idx_[int(x)] = item2idx['item_id'][x]
+    for i in idx2item['item'].index[1:]:
+        idx2item_[i] = int(idx2item['item'][i])
+    return item2idx_, idx2item_
+
+item2idx_, idx2item_ = generate_item2idx()

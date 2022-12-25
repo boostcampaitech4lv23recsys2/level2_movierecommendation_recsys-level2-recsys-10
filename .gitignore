@@ -19,6 +19,15 @@ Thumbs.db
 # pt file
 **/*.pt
 
+# pth file
+**/*.pth
+
+# event file 
+**/events.*
+
+# FPMC exp folder
+**/FPMC/**/exp*
+
 # npy file
 **/*.npy
 
