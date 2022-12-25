@@ -3,11 +3,9 @@ import torch.nn as nn
 
 from modules import Encoder, LayerNorm
 
-from modules import ScaledDotProductAttention, 
-                    MultiHeadAttention,
-                    PositionwiseFeedForward,
-                    BERT4RecBlock
+from modules import ScaledDotProductAttention, MultiHeadAttention, PositionwiseFeedForward, BERT4RecBlock
 
+import numpy as np
 
 
 class S3RecModel(nn.Module):
@@ -246,16 +244,15 @@ class S3RecModel(nn.Module):
             module.bias.data.zero_()
             
 
-class BERT4Rec(nn.Module):
-    def __init__(self, num_user, num_item, hidden_units, num_heads, num_layers, max_len, dropout_rate, device):
-        super(BERT4Rec, self).__init__()
+class BERT4RecModel(nn.Module):
+    def __init__(self, num_user, num_item, hidden_units, num_heads, num_layers, max_len, dropout_rate):
+        super(BERT4RecModel, self).__init__()
 
         self.num_user = num_user
         self.num_item = num_item
         self.hidden_units = hidden_units
         self.num_heads = num_heads
         self.num_layers = num_layers 
-        self.device = device
         
         self.item_emb = nn.Embedding( self.num_item+2, max_len, padding_idx = 0  )  # TODO2: mask와 padding을 고려하여 embedding을 생성해보세요.
         self.pos_emb = nn.Embedding(max_len, hidden_units) # learnable positional encoding
@@ -265,8 +262,8 @@ class BERT4Rec(nn.Module):
         self.blocks = nn.ModuleList([BERT4RecBlock(num_heads, hidden_units, dropout_rate) for _ in range(num_layers)])
         self.out = nn.Linear(self.hidden_units, self.num_item + 1 )  # TODO3: 예측을 위한 output layer를 구현해보세요. (num_item 주의)
         
-    def forward(self, log_seqs):
-        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.device))
+    def get_result(self, log_seqs,device):
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(device))
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
         """ position
         [[ 0  1  2 ... 47 48 49]
@@ -277,7 +274,7 @@ class BERT4Rec(nn.Module):
          [ 0  1  2 ... 47 48 49]
          [ 0  1  2 ... 47 48 49]]
         """
-        seqs += self.pos_emb(torch.LongTensor(positions).to(self.device))
+        seqs += self.pos_emb(torch.LongTensor(positions).to(device))
         seqs = self.emb_layernorm(self.dropout(seqs))
         
         """
@@ -298,7 +295,7 @@ class BERT4Rec(nn.Module):
 
         """
         
-        mask = torch.BoolTensor(log_seqs > 0).unsqueeze(1).repeat(1, log_seqs.shape[1], 1).unsqueeze(1).to(self.device) # mask for zero pad
+        mask = torch.BoolTensor(log_seqs > 0).unsqueeze(1).repeat(1, log_seqs.shape[1], 1).unsqueeze(1).to(device) # mask for zero pad
         for block in self.blocks:
             seqs, attn_dist = block(seqs, mask)
         out = self.out(seqs)

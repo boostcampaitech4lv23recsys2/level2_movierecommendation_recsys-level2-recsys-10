@@ -3,10 +3,14 @@ import random
 import torch
 from torch.utils.data import Dataset
 
-from utils import neg_sample, get_popular_items, neg_sample_from_popular_items, item2idx_
+from utils import neg_sample, get_popular_items, neg_sample_from_popular_items #, item2idx_
+
+import numpy as np
 
 class PretrainDataset(Dataset):
     def __init__(self, args:dict, user_seq:list, long_sequence:list):
+        item2idx_, idx2item_ = generate_item2idx()
+
         self.args = args
         self.user_seq = user_seq
         self.long_sequence = long_sequence
@@ -250,38 +254,46 @@ class SASRecDataset(Dataset):
 
 
 class ClozeDataSet(Dataset):
-    def __init__(self, user_train, num_user, num_item, max_len, mask_prob):
+    def __init__(self, user_train, num_user, num_item, max_len, mask_prob, is_submission:bool=False):
         self.user_train = user_train
         self.num_user = num_user
         self.num_item = num_item
         self.max_len = max_len
         self.mask_prob = mask_prob
+        self.is_submission = is_submission
 
     def __getitem__(self, user): 
         # iterator를 구동할 때 사용됩니다.
         seq = self.user_train[user]
         tokens = []
         labels = []
-        for s in seq:
-            prob = np.random.rand() # TODO1: numpy를 사용해서 0~1 사이의 임의의 값을 샘플링하세요.
-            if prob < self.mask_prob:
-                prob /= self.mask_prob
 
-                # BERT 학습
-                # random 하게 80% 를 mask token 으로 변환 
-                if prob < 0.8:
-                    # masking
-                    tokens.append(self.num_item + 1)  # mask_index: num_item + 1, 0: pad, 1~num_item: item index
-                # random 하게 10% 를 random token 으로 변환 
-                elif prob < 0.9:
-                    tokens.append(np.random.randint(1, self.num_item+1))  # item random sampling
+        if( "submission"== self.is_submission ):
+            tokens = seq[:].copy()
+            # labbels not use
+
+        else :
+            for s in seq:
+                prob = np.random.rand() 
+                if prob < self.mask_prob:
+                    prob /= self.mask_prob
+
+                    # BERT 학습
+                    # random 하게 80% 를 mask token 으로 변환 
+                    if prob < 0.8:
+                        # masking
+                        tokens.append(self.num_item + 1)  # mask_index: num_item + 1, 0: pad, 1~num_item: item index
+                    # random 하게 10% 를 random token 으로 변환 
+                    elif prob < 0.9:
+                        tokens.append(np.random.randint(1, self.num_item+1))  # item random sampling
+                    else:
+                    # 나머지 10% 를 original token 으로 사용
+                        tokens.append(s)
+                    labels.append(s)  # 학습에 사용
                 else:
-                # 나머지 10% 를 original token 으로 사용
                     tokens.append(s)
-                labels.append(s)  # 학습에 사용
-            else:
-                tokens.append(s)
-                labels.append(0)  # 학습에 사용 X, trivial
+                    labels.append(0)  # 학습에 사용 X, trivial
+
         tokens = tokens[-self.max_len:]
         labels = labels[-self.max_len:]
         mask_len = self.max_len - len(tokens)

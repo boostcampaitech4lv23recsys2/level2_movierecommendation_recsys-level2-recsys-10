@@ -14,7 +14,6 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs_long,
     set_seed,
-    item2idx_,
 )
 
 def parse_args():
@@ -30,7 +29,10 @@ def parse_args():
     parser.add_argument("--data_name", default="Ml", type=str)
 
     # model args
-    parser.add_argument("--model_name", default="Pretrain", type=str)
+    parser.add_argument("--model_name", type=str, default="Pretrain",
+     choices=['Pretrain', 'Finetune_full', 'BERT4Rec'],
+     help='학습 및 예측할 모델을 선택할 수 있습니다.'
+     )
 
     parser.add_argument(
         "--hidden_size", type=int, default=64, help="hidden size of transformer model"
@@ -85,6 +87,8 @@ def parse_args():
         "--adam_beta2", type=float, default=0.999, help="adam second beta value"
     )
     parser.add_argument("--gpu_id", type=str, default="0", help="gpu_id")
+    
+    parser.add_argument("--using_pretrain", action="store_true")
 
     args = parser.parse_args()
 

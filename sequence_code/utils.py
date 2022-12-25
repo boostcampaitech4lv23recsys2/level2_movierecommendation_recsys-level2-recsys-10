@@ -403,5 +403,3 @@ def generate_item2idx():
     for i in idx2item['item'].index[1:]:
         idx2item_[i] = int(idx2item['item'][i])
     return item2idx_, idx2item_
-
-item2idx_, idx2item_ = generate_item2idx()

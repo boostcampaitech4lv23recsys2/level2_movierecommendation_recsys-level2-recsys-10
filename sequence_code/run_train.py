@@ -6,8 +6,8 @@ import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 from datasets import SASRecDataset, ClozeDataSet
-from models import S3RecModel, BERT4Rec
-from trainers import FinetuneTrainer
+from models import S3RecModel, BERT4RecModel
+from trainers import FinetuneTrainer, Bert4RecTrainer
 from utils import (
     EarlyStopping,
     check_path,
@@ -17,7 +17,9 @@ from utils import (
 )
 
 import wandb
+import pandas as pd
 from args import parse_args
+from collections import defaultdict
 
 
 def main(args):
@@ -29,14 +31,11 @@ def main(args):
 
     args.data_file = args.data_dir + "train_ratings.csv"
     
-    """ SAS 종속
-    """
     if "Finetune_full" == args.model_name : 
         args = {}
         args.item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
 
-        args.user_seq, args.max_item, args.valid_rating_matrix, args.test_rating_matrix, _ 
-        = get_user_seqs(
+        args.user_seq, args.max_item, args.valid_rating_matrix, args.test_rating_matrix, _ = get_user_seqs(
             args.data_file
         )
 
@@ -77,7 +76,7 @@ def main(args):
             test_dataset, sampler=test_sampler, batch_size=args.batch_size
         )
     
-    elif( "BERT4REC" == args.model ):
+    elif( "BERT4Rec" == args.model_name ):
         ############# 중요 #############
         # data_path는 사용자의 디렉토리에 맞게 설정해야 합니다.
         df = pd.read_csv(args.data_file)
@@ -85,11 +84,12 @@ def main(args):
         item_ids = df['item'].unique()
         user_ids = df['user'].unique()
         num_item, num_user = len(item_ids), len(user_ids)
-        num_batch = num_user // batch_size
+        num_batch = num_user // args.batch_size
 
         # user, item indexing
         item2idx = pd.Series(data=np.arange(len(item_ids))+1, index=item_ids) # item re-indexing (1~num_item), num_item+1: mask idx
         user2idx = pd.Series(data=np.arange(len(user_ids)), index=user_ids) # user re-indexing (0~num_user-1)
+        args.item2idx = item2idx
 
         # dataframe indexing
         df = pd.merge(df, pd.DataFrame({'item': item_ids, 'item_idx': item2idx[item_ids].values}), on='item', how='inner')
@@ -110,68 +110,99 @@ def main(args):
 
         print(f'num users: {num_user}, num items: {num_item}')  
         
+        # max_len = 50
+        # mask_prob = 0.2
+        # hidden_units = 256
+        # num_heads = 2
+        # num_layers = 200
+        # dropout_rate = 0.2
+        # model setting
+        max_len = 50 # 50
+        hidden_units = 50 # 50
+        num_heads = 1
+        num_layers = 2
+        dropout_rate=0.5
+        num_workers = 1
+        device = 'cuda' 
+
+        # training setting
+        lr = 0.001
+        batch_size = 128
+        num_epochs = 200
+        mask_prob = 0.15 # for cloze task
+        criterion = torch.nn.CrossEntropyLoss(ignore_index=0) # label이 0인 경우 무시
+
         seq_dataset = ClozeDataSet(user_train, num_user, num_item, max_len, mask_prob)
-        train_dataset, eval_dataset = torch.tuils.data.dataset.random_split(dataset, [80,20])
-        eval_dataset , test_dataset = torch.tuils.data.dataset.random_split(train_dataset, [10,10])
+        valid_size = int(len(seq_dataset) *0.2) # default val_ratio = 0.2
+        train_size = len(seq_dataset) - valid_size
+        train_dataset, eval_dataset = torch.utils.data.dataset.random_split(seq_dataset, [train_size,valid_size])
 
-        train_data_loader = DataLoader(dataset=train_dataset,batch_size=batch_size,shuffle=True,pin_memory = True)
-        eval_data_loader = DataLoader(dataset=eval_dataset,batch_size=batch_size,shuffle=True,pin_memory = True)
-        test_data_loader = DataLoader(dataset=test_dataset,batch_size=batch_size,shuffle=True,pin_memory = True)
-    
+        eval_size = int(len(eval_dataset) *0.5) # default val_ratio = 0.2
+        test_size = len(eval_dataset) - eval_size
+        eval_dataset , test_dataset = torch.utils.data.dataset.random_split(eval_dataset, [eval_size,test_size])
+
+        train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_size,shuffle=True,pin_memory = True)
+        eval_dataloader = DataLoader(dataset=eval_dataset,batch_size  =args.batch_size,shuffle=True,pin_memory = True)
+        test_dataloader = DataLoader(dataset=test_dataset,batch_size  =args.batch_size,shuffle=True,pin_memory = True)
     # train
-    wandb.login()
-    with wandb.init(project=f"Movie_Rec_{args.model_name}_train", config=vars(args)):
-        if args.model_name == "ALL" :
-            model = S3RecModel(args=args)
+    # wandb.login()
+    # with wandb.init(project=f"Movie_Rec_{args.model_name}_train", config=vars(args)):
+    if args.model_name == "ALL" :
+        model = S3RecModel(args=args)
 
-            trainer = FinetuneTrainer(
-                model, train_dataloader, eval_dataloader, test_dataloader, None, args
-            )
-        elif args.model_name == "BERT4REC":
-            model = BERT4RecModel(args = args) 
-            
-            trainer = Bert4RecTrainer(
-                model, train_dataloader, eval_dataloader, test_dataloader, None, args
-            )
+        trainer = FinetuneTrainer(
+            model, train_dataloader, eval_dataloader, test_dataloader, None, args
+        )
+    elif args.model_name == "BERT4Rec":
+        model = BERT4RecModel(num_user, num_item, hidden_units, num_heads, num_layers, max_len, dropout_rate)
+        
+        trainer = Bert4RecTrainer(
+            model, train_dataloader, eval_dataloader, test_dataloader, None, args, criterion
+        )
 
-        print(args.using_pretrain)
-        if args.using_pretrain:
-            pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
-            try:
-                trainer.load(pretrained_path)
-                print(f"Load Checkpoint From {pretrained_path}!")
+    print(args.using_pretrain)
+    if args.using_pretrain:
+        pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
+        try:
+            trainer.load(pretrained_path)
+            print(f"Load Checkpoint From {pretrained_path}!")
 
-            except FileNotFoundError:
-                print(f"{pretrained_path} Not Found! The Model is same as SASRec")
-        else:
-            print("Not using pretrained model. The Model is same as SASRec")
+        except FileNotFoundError:
+            print(f"{pretrained_path} Not Found! The Model is same as SASRec")
+    else:
+        print("Not using pretrained model. The Model is same as SASRec")
 
-        early_stopping = EarlyStopping(args.checkpoint_path, patience=args.patience, verbose=True)
-        for epoch in range(args.epochs):
-            print('#####################################################################')
-            trainer.train(epoch)
+    # save model args
+    args_str = f"{args.model_name}-{args.data_name}"
+    args.log_file = os.path.join(args.output_dir, args_str + ".txt")
+    print(str(args))
 
-            scores, _ = trainer.valid(epoch)
-            
-            early_stopping(np.array(scores[-1:]), trainer.model)
-            # early_stopping(np.array(scores[2]), trainer.model) # RECALL@10
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
-            
-        if( "ALL" == args.model_name ):
-            print("---------------Change to test_rating_matrix!-------------------")
-            trainer.args.train_matrix = test_rating_matrix
-            # load the best model
-            # trainer.model.load_state_dict(torch.load(args.checkpoint_path))
-            trainer.model.load_state_dict(torch.load(os.path.join(args.output_dir, checkpoint.split('/')[-1])))
-            scores, result_info = trainer.test(0)
-            wandb.log(result_info, step=epoch+1)
-            print(result_info)
-        else : 
-            scores, result_info = trainer.test(0)
-            print(scores )            
-            
+    # save model
+    checkpoint = args_str + ".pt"
+    args.checkpoint_path = os.path.join(args.output_dir, checkpoint)
+
+    early_stopping = EarlyStopping(args.checkpoint_path, patience=args.patience, verbose=True)
+    for epoch in range(args.epochs):
+        print('#####################################################################')
+        trainer.train(epoch)
+
+        scores, _ = trainer.valid(epoch)
+        
+        early_stopping(np.array(scores[-1:]), trainer.model)
+        # early_stopping(np.array(scores[2]), trainer.model) # RECALL@10
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
+        
+    if( "Finetune_full" == args.model_name ):
+        print("---------------Change to test_rating_matrix!-------------------")
+        trainer.args.train_matrix = test_rating_matrix
+        # load the best model
+        # trainer.model.load_state_dict(torch.load(args.checkpoint_path))
+        trainer.model.load_state_dict(torch.load(os.path.join(args.output_dir, checkpoint.split('/')[-1])))
+    scores, result_info = trainer.test(0)
+    # wandb.log(result_info, step=epoch+1)
+    print(result_info)
 
 
 if __name__ == "__main__":
