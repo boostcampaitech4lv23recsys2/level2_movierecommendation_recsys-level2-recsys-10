@@ -177,16 +177,42 @@ def generate_submission_file(data_file, preds):
     )
 
 
-def get_user_seqs(data_file):
+def generate_submission_file_v2(data_file, preds, item2idx_):
+
     rating_df = pd.read_csv(data_file)
+    users = rating_df["user"].unique()
+
+    result = []
+
+    for index, items in enumerate(preds):
+        for item in items:
+            result.append((users[index], item2idx_[item]))  # title index화한거 item으로 되돌리기
+
+    pd.DataFrame(result, columns=["user", "item"]).to_csv(
+        "output/submission.csv", index=False
+    )
+
+
+def get_user_seqs(data_file, item2idx_, random_sort=0 , b_sort_by_time:bool=False):
+    
+    item2idx_, idx2item_ = indexinfo.get_index_info()
+    rating_df = pd.read_csv(data_file)
+    rating_df['item'] = rating_df['item'].map(lambda x: item2idx_[x])
+
+    if( True == b_sort_by_time ) :
+        rating_df.sort_values(['user', 'time'], inplace=True) 
+
     lines = rating_df.groupby("user")["item"].apply(list)
     user_seq = []
     item_set = set()
     for line in lines:
 
         items = line
+        if random.random() < random_sort:
+            random.shuffle(items)
         user_seq.append(items)
         item_set = item_set | set(items)
+        
     max_item = max(item_set)
 
     num_users = len(lines)
@@ -403,3 +429,45 @@ def generate_item2idx():
     for i in idx2item['item'].index[1:]:
         idx2item_[i] = int(idx2item['item'][i])
     return item2idx_, idx2item_
+
+
+class AttributeDict(dict):
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+
+class IndexInfo : 
+
+    def __init__(self, data_path: str ) : 
+
+        item2idx_ = dict()
+        idx2item_ = dict()
+    
+        self.item2idx_, self.idx2item_ = self.make_idx_mapping_info( data_path, item2idx_,idx2item_)
+
+    def make_idx_mapping_info(self,data_path:str,item2idx_:dict, idx2item_:dict):
+
+        if( True == os.path.isfile(data_path)): 
+            item2idx = pd.read_csv(data_path, sep='\t', index_col=0, names=['item_id'])
+            idx2item = pd.read_csv(data_path, sep='\t', index_col=1, names=['item'])
+            
+            for x in item2idx['item_id'].index[1:]:
+                item2idx_[int(x)] = item2idx['item_id'][x]
+            for i in idx2item['item'].index[1:]:
+                idx2item_[i] = int(idx2item['item'][i])
+        
+        return item2idx_, idx2item_
+
+    # data_path 를 생성하는 preprocessing.py 에서 item2idx_ 를 사용하기 때문에 new path 설정 추가 
+    def get_index_info(self, new_path:str=""):
+
+        if( True == os.path.isfile(new_path)): 
+            self.item2idx_, self.idx2item_ = self.make_idx_mapping_info(new_path, self.item2idx_, self.idx2item_)
+
+        if (self.item2idx_) and (self.idx2item_):
+            return self.item2idx_, self.idx2item_
+
+        raise Exception("Please check about datapath. The data will be genereated in pretrain process ( run_pretrain.py )")
+
+indexinfo = IndexInfo('../data/train/item2idx.tsv')   

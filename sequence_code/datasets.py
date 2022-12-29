@@ -1,22 +1,29 @@
 import random
+import numpy as np
 
 import torch
 from torch.utils.data import Dataset
 
-from utils import neg_sample, get_popular_items, neg_sample_from_popular_items #, item2idx_
-
-import numpy as np
+from utils import (
+    EarlyStopping,
+    check_path,
+    get_item2attribute_json,
+    get_user_seqs,
+    set_seed,
+    indexinfo,
+)
 
 class PretrainDataset(Dataset):
     def __init__(self, args:dict, user_seq:list, long_sequence:list):
-        item2idx_, idx2item_ = generate_item2idx()
-
         self.args = args
         self.user_seq = user_seq
         self.long_sequence = long_sequence
         self.max_len = args.max_seq_length
         self.part_sequence = []
         self.split_sequence()
+
+        item2idx_, idx2item_ = indexinfo.get_index_info()
+
         if args.neg_from_pop:
             self.popular_items = get_popular_items(args.data_file, item2idx_, args.neg_from_pop)
 
@@ -49,28 +56,28 @@ class PretrainDataset(Dataset):
                 prob /= self.args.mask_p
                 if prob < 0.8:
                     # arg 의 max_len + 1 이 추가된다. 
-                    masked_item_sequence.append(self.args.mask_id)
+                    masked_item_sequence.append(self.mask_id)
                 elif prob < 0.9:
-                    masked_item_sequence.append(random.randint(1, self.args.item_size-1))
+                    masked_item_sequence.append(random.randint(1, self.item_size-1))
                 else:
                     masked_item_sequence.append(item)
                 
                 if self.args.neg_from_pop:
                     # 현재 item_set 에 없는 item 을 추가 
-                    neg_items.append(neg_sample(item_set, self.args.item_size))
+                    neg_items.append(neg_sample(item_set, self.item_size))
                 else:
-                    neg_items.append(neg_sample(item_set, self.args.item_size))
+                    neg_items.append(neg_sample(item_set, self.item_size))
 
             else:
                 masked_item_sequence.append(item)
                 neg_items.append(item)
 
         # add mask at the last position
-        masked_item_sequence.append(self.args.mask_id)
+        masked_item_sequence.append(self.mask_id)
         if self.args.neg_from_pop:
             neg_items.append(neg_sample_from_popular_items(item_set, self.popular_items, self.max_len))
         else:
-            neg_items.append(neg_sample(item_set, self.args.item_size))
+            neg_items.append(neg_sample(item_set, self.item_size))
 
         # Segment Prediction
         if len(sequence) < 2:
@@ -87,18 +94,18 @@ class PretrainDataset(Dataset):
             ]
             masked_segment_sequence = (
                 sequence[:start_id]
-                + [self.args.mask_id] * sample_length
+                + [self.mask_id] * sample_length
                 + sequence[start_id + sample_length :]
             )
             pos_segment = (
-                [self.args.mask_id] * start_id
+                [self.mask_id] * start_id
                 + pos_segment
-                + [self.args.mask_id] * (len(sequence) - (start_id + sample_length))
+                + [self.mask_id] * (len(sequence) - (start_id + sample_length))
             )
             neg_segment = (
-                [self.args.mask_id] * start_id
+                [self.mask_id] * start_id
                 + neg_segment
-                + [self.args.mask_id] * (len(sequence) - (start_id + sample_length))
+                + [self.mask_id] * (len(sequence) - (start_id + sample_length))
             )
 
         assert len(masked_segment_sequence) == len(sequence)
@@ -126,9 +133,9 @@ class PretrainDataset(Dataset):
         # Masked Attribute Prediction
         attributes = []
         for item in pos_items:
-            attribute = [0] * self.args.attribute_size
+            attribute = [0] * self.attribute_size
             try:
-                now_attribute = self.args.item2attribute[str(item)]
+                now_attribute = self.item2attribute[str(item)]
                 for a in now_attribute:
                     attribute[a] = 1
             except:
@@ -156,14 +163,25 @@ class PretrainDataset(Dataset):
 
 
 class SASRecDataset(Dataset):
-    def __init__(self, args, elems, user_seq, test_neg_items=None, data_type="train"):
-        
+    def __init__(self, args, elem, user_seq, test_neg_items=None, data_type="train"):
         self.args = args
-        self.elems = elems
+        self.elem = elem
+
         self.user_seq = user_seq
         self.test_neg_items = test_neg_items
         self.data_type = data_type
         self.max_len = args.max_seq_length
+
+        self.item_size = elem.max_item + 2
+        self.mask_id = elem.max_item + 1
+        self.attribute_size = elem.attribute_size + 1
+
+        self.item2attribute = item2attribute
+        # set item score in train set to `0` in validation
+        self.args.train_matrix = valid_rating_matrix
+
+        item2idx_, idx2item_ = indexinfo.get_index_info()
+
         if args.neg_from_pop:
             self.popular_items = get_popular_items(args.data_file, item2idx_, args.neg_from_pop)
 
@@ -212,7 +230,7 @@ class SASRecDataset(Dataset):
             if args.neg_from_pop:
                 target_neg.append(neg_sample_from_popular_items(seq_set, self.popular_items, self.max_len))
             else:
-                target_neg.append(neg_sample(seq_set, self.args.item_size))
+                target_neg.append(neg_sample(seq_set, self.item_size))
 
         pad_len = self.max_len - len(input_ids)
         input_ids = [0] * pad_len + input_ids
@@ -254,17 +272,19 @@ class SASRecDataset(Dataset):
 
 
 class ClozeDataSet(Dataset):
-    def __init__(self, user_train, num_user, num_item, max_len, mask_prob, is_submission:bool=False):
-        self.user_train = user_train
-        self.num_user = num_user
-        self.num_item = num_item
-        self.max_len = max_len
-        self.mask_prob = mask_prob
+    def __init__(self, user_seq, args, elem, is_submission:bool=False):
+        self.user_seq  = user_seq
+        self.num_user  = len(user_seq)
+        self.num_item  = elem.num_item
+        self.max_len   = args.max_len
+        self.mask_prob = args.mask_prob
         self.is_submission = is_submission
 
     def __getitem__(self, user): 
         # iterator를 구동할 때 사용됩니다.
-        seq = self.user_train[user]
+        user_id = user
+
+        seq = self.user_seq[user]
         tokens = []
         labels = []
 
@@ -273,6 +293,7 @@ class ClozeDataSet(Dataset):
             # labbels not use
 
         else :
+            seq = seq[:-1]
             for s in seq:
                 prob = np.random.rand() 
                 if prob < self.mask_prob:
@@ -301,7 +322,7 @@ class ClozeDataSet(Dataset):
         # zero padding
         tokens = [0] * mask_len + tokens
         labels = [0] * mask_len + labels
-        return torch.LongTensor(tokens), torch.LongTensor(labels)
+        return torch.tensor(user_id, dtype=torch.long),torch.LongTensor(tokens), torch.LongTensor(labels)
     
     def __len__(self):
         # 총 user의 수 = 학습에 사용할 sequence의 수

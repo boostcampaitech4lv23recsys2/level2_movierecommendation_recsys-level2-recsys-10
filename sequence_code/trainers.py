@@ -327,7 +327,7 @@ class Bert4RecTrainer(Trainer):
         test_dataloader,
         submission_dataloader,
         args,
-        criterion, #function
+        elem,
 
     ):
         super(Bert4RecTrainer, self).__init__(
@@ -339,19 +339,20 @@ class Bert4RecTrainer(Trainer):
             args,
         )
         
-        self.criterion = criterion
+        self.criterion = args.criterion
         self.model = model
         self.train_dataloader = train_dataloader
         self.eval_dataloader  = eval_dataloader
         self.test_dataloader  = test_dataloader
         self.submission_dataloader  = submission_dataloader
         self.args  = args
+        self.elem = elem
         
 
     def iteration(self, epoch, dataloader, mode="train"):
         
-        # if mode != "submission" and self.args.sweep==False:
-        #     wandb.watch(self.model, self.cross_entropy, log="parameters", log_freq=self.args.log_freq)
+        if mode != "submission" and self.args.sweep==False:
+            wandb.watch(self.model, self.cross_entropy, log="parameters", log_freq=self.args.log_freq)
             
         # Setting the tqdm progress bar
         
@@ -372,13 +373,12 @@ class Bert4RecTrainer(Trainer):
             # batch : log sequence and labels 
             for i, batch in rec_data_iter:
                 # 0. batch_data will be sent into the device(GPU or CPU)
-                log_seqs, labels = batch
+                user_ids,log_seqs, labels = batch
                  # size matching
                 logits = self.model.get_result(log_seqs,self.device)
 
                 logits = logits.view(-1, logits.size(-1))   # [51200, 6808]
                 labels = labels.view(-1).to(self.device)    # 51200
-
                 self.optim.zero_grad()
                 loss = self.criterion(logits, labels)
                 loss.backward()
@@ -393,7 +393,7 @@ class Bert4RecTrainer(Trainer):
                 "rec_avg_loss": round(rec_avg_loss_per_len, 4),
                 "rec_cur_loss": round(rec_cur_loss, 4),
             }
-            # wandb.log(post_fix, step=epoch)
+            wandb.log(post_fix, step=epoch)
 
             if (epoch + 1) % self.args.log_freq == 0:
                 print(str(post_fix))
@@ -407,7 +407,7 @@ class Bert4RecTrainer(Trainer):
             pred_list = None
             answer_list = None
             for i, batch in rec_data_iter:
-                log_seqs, labels = batch
+                user_ids,log_seqs, labels = batch
                 logits = self.model.get_result(log_seqs,self.device)
                 
                 # 값이 낮은 순으로 index 를 뽑는다.
@@ -420,7 +420,15 @@ class Bert4RecTrainer(Trainer):
                 rating_pred = logits[:, -1, :] # ( 256, 6808 )매 batch 마지막 sequence 에 대한 user 의 predict 값 
                 rating_pred = rating_pred.cpu().data.numpy().copy()
                 
-                # 이미 본 영화를 제거하려는 의도 
+                # 이미 본 영화를 제거하려는 의도
+                """ 
+                tmp = np.array([0])
+                tmp.resize(rating_pred.shape[0],1)
+                rating_pred = np.append(rating_pred,tmp, axis=1)
+                batch_user_index = user_ids.cpu().numpy()
+                rating_pred[self.elem.train_matrix[batch_user_index].toarray() > 0] = 0
+                """ 
+
                 seq_np = log_seqs.cpu().data.numpy()[:,-1].copy()
                 filter_arr = (seq_np != 6808)&(seq_np != 0)
                 seq_np = seq_np[filter_arr]
@@ -447,16 +455,17 @@ class Bert4RecTrainer(Trainer):
                         answer_list, labels.cpu().data.numpy(), axis=0
                     )
                 
-            new = []
-            for a in pred_list : 
-                new.append(self.args.item2idx[self.args.item2idx.isin(a.tolist())].index.values)
+            # new = []
+            # for a in pred_list : 
+            #     new.append(self.args.item2idx[self.args.item2idx.isin(a.tolist())].index.values)
 
             if mode == "submission":
-                return new
+                return pred_list
             else:
                 score, metrics = self.get_full_sort_score(epoch, answer_list, pred_list)
-                # wandb.log(metrics, step=epoch)
+                wandb.log(metrics, step=epoch)
                 return score, metrics
+
         # 맨 마지막 시점에서 item 10개 추천
         def last_time(self,key, data, result) :
             # key = user_index, data = input data(sequence), result = model output(probability)

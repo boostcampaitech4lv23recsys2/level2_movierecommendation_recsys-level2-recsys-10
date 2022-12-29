@@ -245,21 +245,22 @@ class S3RecModel(nn.Module):
             
 
 class BERT4RecModel(nn.Module):
-    def __init__(self, num_user, num_item, hidden_units, num_heads, num_layers, max_len, dropout_rate):
+    def __init__(self, args, elem):
         super(BERT4RecModel, self).__init__()
 
-        self.num_user = num_user
-        self.num_item = num_item
-        self.hidden_units = hidden_units
-        self.num_heads = num_heads
-        self.num_layers = num_layers 
+        self.args = args
+        self.num_user = elem.num_user
+        self.num_item = elem.num_item
+        self.hidden_units = args.hidden_units
+        self.num_heads = args.num_heads
+        self.num_layers = args.num_layers 
         
-        self.item_emb = nn.Embedding( self.num_item+2, max_len, padding_idx = 0  )  # TODO2: mask와 padding을 고려하여 embedding을 생성해보세요.
-        self.pos_emb = nn.Embedding(max_len, hidden_units) # learnable positional encoding
-        self.dropout = nn.Dropout(dropout_rate)
-        self.emb_layernorm = nn.LayerNorm(hidden_units, eps=1e-6)
+        self.item_emb = nn.Embedding( self.num_item + 2, self.args.max_len, padding_idx = 0  )  # TODO2: mask와 padding을 고려하여 embedding을 생성해보세요.
+        self.pos_emb = nn.Embedding( self.args.max_len, self.hidden_units) # learnable positional encoding
+        self.dropout = nn.Dropout(self.args.dropout_rate)
+        self.emb_layernorm = nn.LayerNorm(self.args.hidden_units, eps=1e-6)
         
-        self.blocks = nn.ModuleList([BERT4RecBlock(num_heads, hidden_units, dropout_rate) for _ in range(num_layers)])
+        self.blocks = nn.ModuleList([BERT4RecBlock(self.args.num_heads, self.args.hidden_units, self.args.dropout_rate) for _ in range(self.num_layers)])
         self.out = nn.Linear(self.hidden_units, self.num_item + 1 )  # TODO3: 예측을 위한 output layer를 구현해보세요. (num_item 주의)
         
     def get_result(self, log_seqs,device):
