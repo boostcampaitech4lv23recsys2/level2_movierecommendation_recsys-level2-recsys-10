@@ -56,7 +56,7 @@ class PretrainDataset(Dataset):
                 prob /= self.args.mask_p
                 if prob < 0.8:
                     # arg 의 max_len + 1 이 추가된다. 
-                    masked_item_sequence.append(self.mask_id)
+                    masked_item_sequence.append(self.args.mask_id)
                 elif prob < 0.9:
                     masked_item_sequence.append(random.randint(1, self.item_size-1))
                 else:

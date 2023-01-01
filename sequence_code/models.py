@@ -255,7 +255,8 @@ class BERT4RecModel(nn.Module):
         self.num_heads = args.num_heads
         self.num_layers = args.num_layers 
         
-        self.item_emb = nn.Embedding( self.num_item + 2, self.args.max_len, padding_idx = 0  )  # TODO2: mask와 padding을 고려하여 embedding을 생성해보세요.
+        self.item_emb = nn.Embedding( self.num_item + 2, self.args.max_len, padding_idx = 0  )  
+        self.attr_emb = nn.Embedding( 3, self.args.max_len, padding_idx = 0  )  
         self.pos_emb = nn.Embedding( self.args.max_len, self.hidden_units) # learnable positional encoding
         self.dropout = nn.Dropout(self.args.dropout_rate)
         self.emb_layernorm = nn.LayerNorm(self.args.hidden_units, eps=1e-6)
@@ -263,8 +264,13 @@ class BERT4RecModel(nn.Module):
         self.blocks = nn.ModuleList([BERT4RecBlock(self.args.num_heads, self.args.hidden_units, self.args.dropout_rate) for _ in range(self.num_layers)])
         self.out = nn.Linear(self.hidden_units, self.num_item + 1 )  # TODO3: 예측을 위한 output layer를 구현해보세요. (num_item 주의)
         
-    def get_result(self, log_seqs,device):
+        torch.nn.init.xavier_uniform_(self.item_emb.weight)
+        torch.nn.init.xavier_uniform_(self.attr_emb.weight)
+        torch.nn.init.xavier_uniform_(self.pos_emb.weight)
+
+    def get_result(self, log_seqs, device):
         seqs = self.item_emb(torch.LongTensor(log_seqs).to(device))
+        # seqs += self.attr_emb(torch.LongTensor(attr_seqs).to(device))
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
         """ position
         [[ 0  1  2 ... 47 48 49]

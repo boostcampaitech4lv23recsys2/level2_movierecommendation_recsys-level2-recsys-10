@@ -105,18 +105,19 @@ def main(args):
         args.hidden_units = 50 # 50
         args.num_heads = 1
         args.num_layers = 2
-        args.dropout_rate=0.5
+        args.dropout_rate=0.2
         args.num_workers = 1
         args.device = 'cuda' 
 
         # training setting
-        args.lr = 0.001
-        args.batch_size = 128
-        args.num_epochs = 200
+        args.lr = 0.002 # 0.002
+        args.batch_size = 256
+        args.num_epochs = 2000
         args.mask_prob = 0.15 # for cloze task
         args.criterion = torch.nn.CrossEntropyLoss(ignore_index=0) # label이 0인 경우 무시
 
-        seq_dataset = ClozeDataSet(user_seq, args, elem)
+        seq_dataset = ClozeDataSet(user_seq[:-1], args, elem)
+
         valid_size = int(len(seq_dataset) *0.2) # default val_ratio = 0.2
         train_size = len(seq_dataset) - valid_size
         train_dataset, eval_dataset = torch.utils.data.dataset.random_split(seq_dataset, [train_size,valid_size])
@@ -125,9 +126,9 @@ def main(args):
         test_size = len(eval_dataset) - eval_size
         eval_dataset , test_dataset = torch.utils.data.dataset.random_split(eval_dataset, [eval_size,test_size])
 
-        train_dataloader = DataLoader(dataset=train_dataset,batch_size=args.batch_size,shuffle=True,pin_memory = True)
-        eval_dataloader = DataLoader(dataset=eval_dataset,batch_size  =args.batch_size,shuffle=True,pin_memory = True)
-        test_dataloader = DataLoader(dataset=test_dataset,batch_size  =args.batch_size,shuffle=True,pin_memory = True)
+        train_dataloader = DataLoader(dataset = train_dataset, batch_size = args.batch_size, shuffle=True, pin_memory = True)
+        eval_dataloader = DataLoader(dataset  = eval_dataset , batch_size = args.batch_size, shuffle=True, pin_memory = True)
+        test_dataloader = DataLoader(dataset  = test_dataset , batch_size = args.batch_size, shuffle=True, pin_memory = True)
     # train
     wandb.login()
     with wandb.init(project=f"Movie_Rec_{args.model_name}_train", config=vars(args)):

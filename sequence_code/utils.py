@@ -471,3 +471,4 @@ class IndexInfo :
         raise Exception("Please check about datapath. The data will be genereated in pretrain process ( run_pretrain.py )")
 
 indexinfo = IndexInfo('../data/train/item2idx.tsv')   
+item2idx_,idx2item_=indexinfo.get_index_info()

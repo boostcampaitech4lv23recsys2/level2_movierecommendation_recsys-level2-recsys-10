@@ -81,7 +81,7 @@ def main(args):
 
         print(f'num users: {elem.num_user}, num items: {elem.num_item}')
         
-        # model setting
+        # model setting 
         args.max_len = 50 # 200
         args.hidden_units = 50 # 200
         args.num_heads = 1

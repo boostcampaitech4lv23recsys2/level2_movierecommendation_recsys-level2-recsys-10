@@ -284,6 +284,7 @@ class FinetuneTrainer(Trainer):
                 recommend_output = self.model.finetune(input_ids)
 
                 recommend_output = recommend_output[:, -1, :]
+                # recommend_output = recommend_output.sum(axis=0)
 
                 rating_pred = self.predict_full(recommend_output)
 
@@ -417,9 +418,58 @@ class Bert4RecTrainer(Trainer):
                 array.argsort().argsort() = [[2,0,1],[0,1,2]]
                 """
                 # recommend_output = logits[:,:].argsort()[:,:,-1].view(-1)
-                rating_pred = logits[:, -1, :] # ( 256, 6808 )매 batch 마지막 sequence 에 대한 user 의 predict 값 
-                rating_pred = rating_pred.cpu().data.numpy().copy()
                 
+                """
+                rating_pred = logits[:, -1, :] # ( 256, 6808 ) 각 user 의 마지막 sequence 에 대한 pediction  
+                rating_pred = rating_pred.cpu().data.numpy().copy()
+                """
+                
+                """221230일시 전체 주석
+                """
+                # for idx in range( 0, self.args.max_len , 5 ):
+                #     rating_pred2 = logits[:, idx, :]
+                #     rating_pred2 = rating_pred2.cpu().data.numpy().copy()
+
+                #     seq_np = log_seqs.cpu().data.numpy()[:,-1].copy()
+                #     filter_arr = (seq_np != 6808)&(seq_np != 0)
+                #     seq_np = seq_np[filter_arr]
+                #     rating_pred2[:,seq_np] = -np.inf # 이미 시청한 영화 제거
+
+                #     # -10을 기준으로 정렬해서 큰 것 부터 10 개의 index  
+                #     ind = np.argpartition(rating_pred2,-10)[:, -10:]
+                #     # -10을 기준으로 정렬해서 큰 것 부터 10 개의 값 
+                #     arr_ind = rating_pred2[np.arange(len(rating_pred2))[:, None], ind]
+
+                #     # 각 index 의 순위 ( 값이 작은 것부터 0 )! 
+                #     arr_ind_argsort = np.argsort(arr_ind)[np.arange(len(rating_pred2)), ::-1]
+
+                #     batch_pred_list = ind[
+                #         np.arange(len(rating_pred2))[:, None], arr_ind_argsort
+                #     ]
+
+                #     if idx == 0 : 
+                #         all_pred = batch_pred_list 
+                #     else : 
+                #         all_pred= np.append(all_pred,batch_pred_list,axis=1)
+                
+                # val = np.unique(all_pred,axis = 1)
+
+                # for idx, item in enumerate(val):
+                #     unique_item, cnt = np.unique(item,return_counts = True )
+                #     ind = np.argpartition(cnt, -10)[-10:]
+                #     q = unique_item[ind]
+
+                #     if idx == 0 :
+                #         batch_pred_list = [q] 
+                #     else : 
+                #         batch_pred_list = np.append(batch_pred_list,[q],axis=0)
+                """221230일시 전체 주석 여기까지
+                """
+
+
+                # rating_pred = logits[:, -1, :] # ( 256, 6808 )매 batch 마지막 sequence 에 대한 user 의 predict 값 
+                rating_pred = logits.sum(axis = 1)
+                rating_pred = rating_pred.cpu().data.numpy().copy()
                 # 이미 본 영화를 제거하려는 의도
                 """ 
                 tmp = np.array([0])
@@ -476,4 +526,18 @@ class Bert4RecTrainer(Trainer):
             user = user_id[key]
             for item in rec_item_id :
                 final.append((user, item))
-                
+
+        def get_last_time(self,logits):
+
+            return logits[:, -1, :] # ( 256, 6808 )매 batch 마지막 sequence 에 대한 user 의 predict 값 
+            
+        def get_sum_all_time(self,logits):
+
+            return logits.sum(axis = 1)
+
+        def get_k_time(self, logits):
+
+            for idx, item in enumerate(logits):
+                if( idx % 5 == 0 ):
+                    logits[:,idx:,]
+                print(idx)
