@@ -11,6 +11,7 @@ from utils import (
     get_user_seqs,
     set_seed,
     indexinfo,
+    neg_sample,
 )
 
 class PretrainDataset(Dataset):
@@ -58,26 +59,26 @@ class PretrainDataset(Dataset):
                     # arg 의 max_len + 1 이 추가된다. 
                     masked_item_sequence.append(self.args.mask_id)
                 elif prob < 0.9:
-                    masked_item_sequence.append(random.randint(1, self.item_size-1))
+                    masked_item_sequence.append(random.randint(1, self.args.item_size-1))
                 else:
                     masked_item_sequence.append(item)
                 
                 if self.args.neg_from_pop:
                     # 현재 item_set 에 없는 item 을 추가 
-                    neg_items.append(neg_sample(item_set, self.item_size))
+                    neg_items.append(neg_sample(item_set, self.args.item_size))
                 else:
-                    neg_items.append(neg_sample(item_set, self.item_size))
+                    neg_items.append(neg_sample(item_set, self.args.item_size))
 
             else:
                 masked_item_sequence.append(item)
                 neg_items.append(item)
 
         # add mask at the last position
-        masked_item_sequence.append(self.mask_id)
+        masked_item_sequence.append(self.args.mask_id)
         if self.args.neg_from_pop:
             neg_items.append(neg_sample_from_popular_items(item_set, self.popular_items, self.max_len))
         else:
-            neg_items.append(neg_sample(item_set, self.item_size))
+            neg_items.append(neg_sample(item_set, self.args.item_size))
 
         # Segment Prediction
         if len(sequence) < 2:
@@ -94,18 +95,18 @@ class PretrainDataset(Dataset):
             ]
             masked_segment_sequence = (
                 sequence[:start_id]
-                + [self.mask_id] * sample_length
+                + [self.args.mask_id] * sample_length
                 + sequence[start_id + sample_length :]
             )
             pos_segment = (
-                [self.mask_id] * start_id
+                [self.args.mask_id] * start_id
                 + pos_segment
-                + [self.mask_id] * (len(sequence) - (start_id + sample_length))
+                + [self.args.mask_id] * (len(sequence) - (start_id + sample_length))
             )
             neg_segment = (
-                [self.mask_id] * start_id
+                [self.args.mask_id] * start_id
                 + neg_segment
-                + [self.mask_id] * (len(sequence) - (start_id + sample_length))
+                + [self.args.mask_id] * (len(sequence) - (start_id + sample_length))
             )
 
         assert len(masked_segment_sequence) == len(sequence)
@@ -133,7 +134,7 @@ class PretrainDataset(Dataset):
         # Masked Attribute Prediction
         attributes = []
         for item in pos_items:
-            attribute = [0] * self.attribute_size
+            attribute = [0] * self.args.attribute_size
             try:
                 now_attribute = self.item2attribute[str(item)]
                 for a in now_attribute:
@@ -172,13 +173,9 @@ class SASRecDataset(Dataset):
         self.data_type = data_type
         self.max_len = args.max_seq_length
 
-        self.item_size = elem.max_item + 2
-        self.mask_id = elem.max_item + 1
-        self.attribute_size = elem.attribute_size + 1
-
-        self.item2attribute = item2attribute
-        # set item score in train set to `0` in validation
-        self.args.train_matrix = valid_rating_matrix
+        # self.item_size = elem.max_item + 2
+        # self.mask_id = elem.max_item + 1
+        # self.attribute_size = elem.attribute_size + 1
 
         item2idx_, idx2item_ = indexinfo.get_index_info()
 
@@ -227,10 +224,10 @@ class SASRecDataset(Dataset):
         target_neg = []
         seq_set = set(items)
         for _ in input_ids:
-            if args.neg_from_pop:
+            if self.args.neg_from_pop:
                 target_neg.append(neg_sample_from_popular_items(seq_set, self.popular_items, self.max_len))
             else:
-                target_neg.append(neg_sample(seq_set, self.item_size))
+                target_neg.append(neg_sample(seq_set, self.elem.item_size))
 
         pad_len = self.max_len - len(input_ids)
         input_ids = [0] * pad_len + input_ids
@@ -272,7 +269,7 @@ class SASRecDataset(Dataset):
 
 
 class ClozeDataSet(Dataset):
-    def __init__(self, user_seq, args, elem, is_submission:bool=False):
+    def __init__(self, user_seq,attr_seq, args, elem, is_submission:bool=False):
         self.user_seq  = user_seq
         self.num_user  = len(user_seq)
         self.num_item  = elem.num_item
@@ -280,20 +277,27 @@ class ClozeDataSet(Dataset):
         self.mask_prob = args.mask_prob
         self.is_submission = is_submission
 
+        self.attr_seq = attr_seq
+
+
     def __getitem__(self, user): 
         # iterator를 구동할 때 사용됩니다.
         user_id = user
 
         seq = self.user_seq[user]
+        attr_seq = self.attr_seq[user]
         tokens = []
+        attrs = [] 
         labels = []
 
         if( "submission"== self.is_submission ):
             tokens = seq[:].copy()
+            attrs = attr_seq[:].copy()
             # labbels not use
 
         else :
             seq = seq[:-1]
+            attrs = attr_seq[:-1]
             for s in seq:
                 prob = np.random.rand() 
                 if prob < self.mask_prob:
@@ -316,13 +320,15 @@ class ClozeDataSet(Dataset):
                     labels.append(0)  # 학습에 사용 X, trivial
 
         tokens = tokens[-self.max_len:]
+        attrs  = attrs[-self.max_len:]
         labels = labels[-self.max_len:]
         mask_len = self.max_len - len(tokens)
 
         # zero padding
         tokens = [0] * mask_len + tokens
+        attrs  = [0] * mask_len + attrs
         labels = [0] * mask_len + labels
-        return torch.tensor(user_id, dtype=torch.long),torch.LongTensor(tokens), torch.LongTensor(labels)
+        return torch.tensor(user_id, dtype=torch.long),torch.LongTensor(tokens), torch.LongTensor(labels),torch.LongTensor(attrs)
     
     def __len__(self):
         # 총 user의 수 = 학습에 사용할 sequence의 수

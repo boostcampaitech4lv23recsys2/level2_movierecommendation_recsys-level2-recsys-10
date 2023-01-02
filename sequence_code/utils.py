@@ -193,6 +193,31 @@ def generate_submission_file_v2(data_file, preds, item2idx_):
     )
 
 
+def get_attr_seqs(data_file, random_sort=0, b_sort_by_time:bool=False ):
+
+    rating_df = pd.read_csv(data_file)
+
+    if( True == b_sort_by_time ) :
+        rating_df.sort_values(['user', 'time'], inplace=True) 
+
+    lines = rating_df.groupby("user")["interested_rating"].apply(list)
+    # lines = rating_df.groupby("user")["genre"].apply(list)
+    # lines = rating_df.groupby("user")["director"].apply(list)
+    # lines = rating_df.groupby("user")["writer"].apply(list)
+    attr_seq = []
+
+    for line in lines:
+
+        attrs = line
+
+        if random.random() < random_sort:
+            random.shuffle(attrs)
+        
+        attr_seq.append(attrs)
+
+    return attr_seq
+
+
 def get_user_seqs(data_file, item2idx_, random_sort=0 , b_sort_by_time:bool=False):
     
     item2idx_, idx2item_ = indexinfo.get_index_info()

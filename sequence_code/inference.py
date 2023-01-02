@@ -40,36 +40,40 @@ def main(args):
     """SASRec 종속 
     """
     if "Finetune_full"== args.model_name : 
+        item2idx_,idx2item_ = indexinfo.get_index_info()
+
         item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
 
-        user_seq, max_item, _, _, submission_rating_matrix = get_user_seqs(args.data_file)
+        user_seq, elem.max_item, _, _, submission_rating_matrix = get_user_seqs(args.data_file,item2idx_)
 
-        item2attribute, attribute_size = get_item2attribute_json(item2attribute_file)
+        elem.item2attribute, elem.attribute_size = get_item2attribute_json(item2attribute_file)
 
-        args.item_size = max_item + 2
-        args.mask_id = max_item + 1
-        args.attribute_size = attribute_size + 1
+        elem.item_size = elem.max_item + 2
+        elem.mask_id =  elem.max_item + 1
+        elem.attribute_size = elem. attribute_size + 1
 
         # save model args
         print(str(args))
 
-        args.item2attribute = item2attribute
+        elem.item2attribute =  elem.item2attribute
+        elem.train_matrix = submission_rating_matrix
 
-        args.train_matrix = submission_rating_matrix
-
-        submission_dataset = SASRecDataset(args, user_seq, data_type="submission")
+        submission_dataset = SASRecDataset(args, elem, user_seq, data_type="submission")
         submission_sampler = SequentialSampler(submission_dataset)
         submission_dataloader = DataLoader(
             submission_dataset, sampler=submission_sampler, batch_size=args.batch_size
         )
 
-        model = S3RecModel(args=args)
+        model = S3RecModel(args=args,elem=elem)
 
-        trainer = FinetuneTrainer(model, None, None, None, submission_dataloader, args)
+        trainer = FinetuneTrainer(model, None, None, None, submission_dataloader, args,elem)
     else : 
         item2idx_,idx2item_ = indexinfo.get_index_info()
         user_seq, max_item, train_matrix,test_rating_matrix,submissoin_rating_marix = get_user_seqs(
             args.data_file,item2idx_, b_sort_by_time = True
+        )
+        attr_seqs =  get_attr_seqs(
+            args.data_file, b_sort_by_time = True
         )
         
         elem.train_matrix = train_matrix
@@ -96,7 +100,7 @@ def main(args):
         args.num_epochs = 200
         args.mask_prob = 0.15 # for cloze task
         
-        submission_dataset = ClozeDataSet(user_seq, args, elem, is_submission=True)
+        submission_dataset = ClozeDataSet(user_seq,attr_seqs, args, elem, is_submission=True)
         submission_sampler = SequentialSampler(submission_dataset)
         submission_dataloader = DataLoader(
             submission_dataset, sampler=submission_sampler, batch_size=args.batch_size

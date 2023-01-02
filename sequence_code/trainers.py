@@ -219,6 +219,7 @@ class FinetuneTrainer(Trainer):
         test_dataloader,
         submission_dataloader,
         args,
+        elem,
     ):
         super(FinetuneTrainer, self).__init__(
             model,
@@ -228,6 +229,8 @@ class FinetuneTrainer(Trainer):
             submission_dataloader,
             args,
         )
+
+        self.elem = elem
 
     def iteration(self, epoch, dataloader, mode="train"):
         
@@ -290,7 +293,7 @@ class FinetuneTrainer(Trainer):
 
                 rating_pred = rating_pred.cpu().data.numpy().copy()
                 batch_user_index = user_ids.cpu().numpy()
-                rating_pred[self.args.train_matrix[batch_user_index].toarray() > 0] = 0
+                rating_pred[self.elem.train_matrix[batch_user_index].toarray() > 0] = 0
 
                 ind = np.argpartition(rating_pred, -10)[:, -10:]
 
@@ -374,9 +377,9 @@ class Bert4RecTrainer(Trainer):
             # batch : log sequence and labels 
             for i, batch in rec_data_iter:
                 # 0. batch_data will be sent into the device(GPU or CPU)
-                user_ids,log_seqs, labels = batch
+                user_ids,log_seqs, labels, attr_seqs = batch
                  # size matching
-                logits = self.model.get_result(log_seqs,self.device)
+                logits = self.model.get_result(log_seqs,attr_seqs,self.device)
 
                 logits = logits.view(-1, logits.size(-1))   # [51200, 6808]
                 labels = labels.view(-1).to(self.device)    # 51200
@@ -408,8 +411,8 @@ class Bert4RecTrainer(Trainer):
             pred_list = None
             answer_list = None
             for i, batch in rec_data_iter:
-                user_ids,log_seqs, labels = batch
-                logits = self.model.get_result(log_seqs,self.device)
+                user_ids,log_seqs, labels, attr_seqs = batch
+                logits = self.model.get_result(log_seqs,attr_seqs,self.device)
                 
                 # 값이 낮은 순으로 index 를 뽑는다.
                 """

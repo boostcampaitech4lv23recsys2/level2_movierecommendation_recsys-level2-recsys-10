@@ -10,13 +10,13 @@ import numpy as np
 
 class S3RecModel(nn.Module):
     # https://github.com/RUCAIBox/CIKM2020-S3Rec/blob/master/model.PNG
-    def __init__(self, args):
+    def __init__(self, args,elem):
         super(S3RecModel, self).__init__()
         self.item_embeddings = nn.Embedding(
-            args.item_size, args.hidden_size, padding_idx=0
+            elem.item_size, args.hidden_size, padding_idx=0
         )
         self.attribute_embeddings = nn.Embedding(
-            args.attribute_size, args.hidden_size, padding_idx=0
+            elem.attribute_size, args.hidden_size, padding_idx=0
         )
         self.position_embeddings = nn.Embedding(args.max_seq_length, args.hidden_size)
         self.item_encoder = Encoder(args)
@@ -127,10 +127,10 @@ class S3RecModel(nn.Module):
             sequence_output, attribute_embeddings
         )
         aap_loss = self.criterion(
-            aap_score, attributes.view(-1, self.args.attribute_size).float()
+            aap_score, attributes.view(-1, self.elem.attribute_size).float()
         )
         # only compute loss at non-masked position
-        aap_mask = (masked_item_sequence != self.args.mask_id).float() * (
+        aap_mask = (masked_item_sequence != self.elem.mask_id).float() * (
             masked_item_sequence != 0
         ).float()
         aap_loss = torch.sum(aap_loss * aap_mask.flatten().unsqueeze(-1))
@@ -144,7 +144,7 @@ class S3RecModel(nn.Module):
         mip_loss = self.criterion(
             mip_distance, torch.ones_like(mip_distance, dtype=torch.float32)
         )
-        mip_mask = (masked_item_sequence == self.args.mask_id).float()
+        mip_mask = (masked_item_sequence == self.elem.mask_id).float()
         mip_loss = torch.sum(mip_loss * mip_mask.flatten())
 
         # MAP
@@ -152,9 +152,9 @@ class S3RecModel(nn.Module):
             sequence_output, attribute_embeddings
         )
         map_loss = self.criterion(
-            map_score, attributes.view(-1, self.args.attribute_size).float()
+            map_score, attributes.view(-1, self.elem.attribute_size).float()
         )
-        map_mask = (masked_item_sequence == self.args.mask_id).float()
+        map_mask = (masked_item_sequence == self.elem.mask_id).float()
         map_loss = torch.sum(map_loss * map_mask.flatten().unsqueeze(-1))
 
         # SP
@@ -256,7 +256,7 @@ class BERT4RecModel(nn.Module):
         self.num_layers = args.num_layers 
         
         self.item_emb = nn.Embedding( self.num_item + 2, self.args.max_len, padding_idx = 0  )  
-        self.attr_emb = nn.Embedding( 3, self.args.max_len, padding_idx = 0  )  
+        self.attr_emb = nn.Embedding(2+1, self.args.max_len, padding_idx = 0  )  
         self.pos_emb = nn.Embedding( self.args.max_len, self.hidden_units) # learnable positional encoding
         self.dropout = nn.Dropout(self.args.dropout_rate)
         self.emb_layernorm = nn.LayerNorm(self.args.hidden_units, eps=1e-6)
@@ -268,8 +268,9 @@ class BERT4RecModel(nn.Module):
         torch.nn.init.xavier_uniform_(self.attr_emb.weight)
         torch.nn.init.xavier_uniform_(self.pos_emb.weight)
 
-    def get_result(self, log_seqs, device):
+    def get_result(self, log_seqs,attr_seqs, device):
         seqs = self.item_emb(torch.LongTensor(log_seqs).to(device))
+        seqs += self.attr_emb(torch.LongTensor(attr_seqs).to(device))
         # seqs += self.attr_emb(torch.LongTensor(attr_seqs).to(device))
         positions = np.tile(np.array(range(log_seqs.shape[1])), [log_seqs.shape[0], 1])
         """ position

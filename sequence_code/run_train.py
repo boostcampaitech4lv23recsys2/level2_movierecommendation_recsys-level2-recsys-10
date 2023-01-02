@@ -16,6 +16,7 @@ from utils import (
     set_seed,
     indexinfo,
     AttributeDict,
+    get_attr_seqs,
 )
 
 import wandb
@@ -49,30 +50,33 @@ def main(args):
     if "Finetune_full" == args.model_name : 
 
         args.item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
-        elem.item2attribute, elem.attribute_size = get_item2attribute_json(item2attribute_file)
+        elem.item2attribute, elem.attribute_size = get_item2attribute_json(args.item2attribute_file)
 
         item2idx_,idx2item_ = indexinfo.get_index_info()
-        user_seq, max_item, 
-        elem.train_matrix, elem.test_rating_matrix, elem.submissoin_rating_marix\
+        user_seq, elem.max_item, elem.train_matrix, elem.test_rating_matrix, elem.submissoin_rating_marix\
         = get_user_seqs(
             args.data_file,
             item2idx_
         )
+        elem.valid_rating_matrix = elem.train_matrix
+        elem.item_size = elem.max_item + 2
+        elem.mask_id = elem.max_item + 1
+        elem.attribute_size = elem.attribute_size + 1
 
-        train_dataset = SASRecDataset(args, user_seq, data_type="train")
+        train_dataset = SASRecDataset(args,elem, user_seq, data_type="train")
 
-        train_sampRandomSamplerler = (train_dataset)
+        train_sampler = RandomSampler(train_dataset)
         train_dataloader = DataLoader(
             train_dataset, sampler=train_sampler, batch_size=args.batch_size
         )
 
-        eval_dataset = SASRecDataset(args, user_seq, data_type="valid")
+        eval_dataset = SASRecDataset(args,elem, user_seq, data_type="valid")
         eval_sampler = SequentialSampler(eval_dataset)
         eval_dataloader = DataLoader(
             eval_dataset, sampler=eval_sampler, batch_size=args.batch_size
         )
 
-        test_dataset = SASRecDataset(args, user_seq, data_type="test")
+        test_dataset = SASRecDataset(args,elem, user_seq, data_type="test")
         test_sampler = SequentialSampler(test_dataset)
         test_dataloader = DataLoader(
             test_dataset, sampler=test_sampler, batch_size=args.batch_size
@@ -84,6 +88,8 @@ def main(args):
         user_seq, max_item, train_matrix,test_rating_matrix,submissoin_rating_marix = get_user_seqs(
             args.data_file,item2idx_, b_sort_by_time = True
         )
+
+        attr_seq = get_attr_seqs(args.data_file,b_sort_by_time=True)
         
         elem.train_matrix = train_matrix
         elem.test_rating_matrix = test_rating_matrix
@@ -116,7 +122,7 @@ def main(args):
         args.mask_prob = 0.15 # for cloze task
         args.criterion = torch.nn.CrossEntropyLoss(ignore_index=0) # label이 0인 경우 무시
 
-        seq_dataset = ClozeDataSet(user_seq[:-1], args, elem)
+        seq_dataset = ClozeDataSet(user_seq, attr_seq,args, elem)
 
         valid_size = int(len(seq_dataset) *0.2) # default val_ratio = 0.2
         train_size = len(seq_dataset) - valid_size
@@ -133,10 +139,10 @@ def main(args):
     wandb.login()
     with wandb.init(project=f"Movie_Rec_{args.model_name}_train", config=vars(args)):
         if args.model_name == "Finetune_full" :
-            model = S3RecModel(args=args)
+            model = S3RecModel(args=args,elem=elem)
 
             trainer = FinetuneTrainer(
-                model, train_dataloader, eval_dataloader, test_dataloader, None, args
+                model, train_dataloader, eval_dataloader, test_dataloader, None, args, elem
             )
         elif args.model_name == "BERT4Rec":
             model = BERT4RecModel(args,elem)
@@ -181,7 +187,7 @@ def main(args):
             
         if( "Finetune_full" == args.model_name ):
             print("---------------Change to test_rating_matrix!-------------------")
-            trainer.args.train_matrix = test_rating_matrix
+            trainer.args.train_matrix = elem.test_rating_matrix
             # load the best model
             # trainer.model.load_state_dict(torch.load(args.checkpoint_path))
             trainer.model.load_state_dict(torch.load(os.path.join(args.output_dir, checkpoint.split('/')[-1])))
