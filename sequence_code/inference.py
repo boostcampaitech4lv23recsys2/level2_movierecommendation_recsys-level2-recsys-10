@@ -16,6 +16,7 @@ from utils import (
     set_seed,
     indexinfo,
     AttributeDict,
+    get_attr_seqs,
 )
 
 from args import parse_args
@@ -86,11 +87,11 @@ def main(args):
         print(f'num users: {elem.num_user}, num items: {elem.num_item}')
         
         # model setting 
-        args.max_len = 50 # 200
-        args.hidden_units = 50 # 200
+        args.max_len = 150 # 200
+        args.hidden_units = 150 # 200
         args.num_heads = 1
         args.num_layers = 2
-        args.dropout_rate = 0.5 # 0.2
+        args.dropout_rate = 0.0# 0.2
         args.num_workers = 1
         args.device = 'cuda' 
 

@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument("--data_name", default="Ml", type=str)
 
     # model args
-    parser.add_argument("--model_name", type=str, default="Pretrain",
+    parser.add_argument("--model_name", type=str, default="BERT4Rec",
      choices=['Pretrain', 'Finetune_full', 'BERT4Rec'],
      help='학습 및 예측할 모델을 선택할 수 있습니다.'
      )
@@ -53,6 +53,7 @@ def parse_args():
     )
     parser.add_argument("--initializer_range", type=float, default=0.02)
     parser.add_argument("--max_seq_length", default=50, type=int)
+    parser.add_argument("--max_len", default=50, type=int)
 
     # train args
     parser.add_argument("--lr", type=float, default=0.001, help="learning rate of adam")
@@ -60,7 +61,7 @@ def parse_args():
         "--batch_size", type=int, default=256, help="number of batch_size"
     )
     parser.add_argument("--epochs", type=int, default=200, help="number of epochs")
-    parser.add_argument("--patience", type=int, default=20, help="patience for early stopping")
+    parser.add_argument("--patience", type=int, default=40, help="patience for early stopping")
     parser.add_argument("--no_cuda", action="store_true")
     parser.add_argument("--log_freq", type=int, default=1, help="per epoch print res")
     parser.add_argument("--seed", default=42, type=int)
@@ -89,6 +90,18 @@ def parse_args():
     parser.add_argument("--gpu_id", type=str, default="0", help="gpu_id")
     
     parser.add_argument("--using_pretrain", action="store_true")
+
+    parser.add_argument("--num_heads", type=int, default=1)
+    parser.add_argument("--num_layers", type=int, default=2)
+    parser.add_argument("--dropout_rate", type=float, default=0.2)
+    # parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--mask_prob", type=float, default=0.15)
+
+    # args.mask_prob = 0.15 # for cloze task
+    # args.num_heads = 1
+    # args.num_layers = 2
+    # args.dropout_rate=0.2
+    # args.batch_size = 256
 
     args = parser.parse_args()
 

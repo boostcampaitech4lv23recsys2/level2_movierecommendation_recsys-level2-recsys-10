@@ -107,19 +107,20 @@ def main(args):
         # num_layers = 200
         # dropout_rate = 0.2
         # model setting
-        args.max_len = 50 # 50
-        args.hidden_units = 50 # 50
-        args.num_heads = 1
-        args.num_layers = 2
-        args.dropout_rate=0.2
+
+        # args.max_len = 50 # 50
+        args.hidden_units = args.max_len  # 50
+        # args.num_heads = 1
+        # args.num_layers = 2
+        # args.dropout_rate=0.2
         args.num_workers = 1
         args.device = 'cuda' 
 
         # training setting
-        args.lr = 0.002 # 0.002
-        args.batch_size = 256
+        # args.lr = 0.002 # 0.002
+        # args.batch_size = 256
         args.num_epochs = 2000
-        args.mask_prob = 0.15 # for cloze task
+        # args.mask_prob = 0.15 # for cloze task
         args.criterion = torch.nn.CrossEntropyLoss(ignore_index=0) # label이 0인 경우 무시
 
         seq_dataset = ClozeDataSet(user_seq, attr_seq,args, elem)
