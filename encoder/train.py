@@ -9,6 +9,7 @@ import torch.optim as optim
 from  torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
 from torch.utils.data import DataLoader#, RandomSampler, SequentialSampler
+import wandb
 
 
 from preprocessing import numerize
@@ -194,103 +195,33 @@ def main():
     # Training code
     ###############################################################################
 
-    best_r10 = -np.inf
+    wandb.login()
+    with wandb.init(project="MovieRec_encoder", config=vars(args)):
+        best_r10 = -np.inf
 
-    for epoch in range(1, args.epochs + 1):
-        epoch_start_time = time()
-        trainer.train(epoch, args.model_name)
-        total_loss, r10, r20 = trainer.evaluate(args.model_name) # mode: valid
-        # val_loss, n100, r20, r50 = evaluate(model, criterion, vad_data_tr, vad_data_te, is_VAE=False)
-        print('-' * 89)
-        print('| end of epoch {:3d} | time: {:4.2f}s | valid loss {:4.2f} | '
-                    'r10 {:5.3f} | r20 {:5.3f}'.format(
-                        epoch, time() - epoch_start_time, total_loss, r10, r20))
-        print('-' * 89)
+        for epoch in range(1, args.epochs + 1):
+            epoch_start_time = time()
+            trainer.train(epoch, args.model_name)
+            total_loss, r10, r20 = trainer.evaluate(args.model_name) # mode: valid
+            # val_loss, n100, r20, r50 = evaluate(model, criterion, vad_data_tr, vad_data_te, is_VAE=False)
+            print('-' * 89)
+            print('| end of epoch {:3d} | time: {:4.2f}s | valid loss {:4.2f} | '
+                        'r10 {:5.3f} | r20 {:5.3f}'.format(
+                            epoch, time() - epoch_start_time, total_loss, r10, r20))
+            print('-' * 89)
 
-        # Save the model if the n100 is the best we've seen so far.
-        if r10 > best_r10:
-            with open(args.save, 'wb') as f:
-                torch.save(model, f)
+            # Save the model if the n100 is the best we've seen so far.
+            if r10 > best_r10:
+                with open(args.save, 'wb') as f:
+                    torch.save(model, f)
             best_r10 = r10
+            wandb.log({
+                "epoch": epoch,
+                "train_loss": total_loss,
+                "recall@10": r10,
+                "recall@20": r20
+            })
 
-
-    # train_dataset = SASRecDataset(args, user_seq, data_type="train")
-    # train_sampler = RandomSampler(train_dataset)
-    # train_dataloader = DataLoader(
-    #     train_dataset, sampler=train_sampler, batch_size=args.batch_size
-    # )
-
-    # eval_dataset = SASRecDataset(args, user_seq, data_type="valid")
-    # eval_sampler = SequentialSampler(eval_dataset)
-    # eval_dataloader = DataLoader(
-    #     eval_dataset, sampler=eval_sampler, batch_size=args.batch_size
-    # )
-
-    # test_dataset = SASRecDataset(args, user_seq, data_type="test")
-    # test_sampler = SequentialSampler(test_dataset)
-    # test_dataloader = DataLoader(
-    #     test_dataset, sampler=test_sampler, batch_size=args.batch_size
-    # )
-
-    # args.item2attribute = item2attribute
-    # # set item score in train set to `0` in validation
-    # args.train_matrix = valid_rating_matrix
-
-
-
-    # train_dataset = SASRecDataset(args, user_seq, data_type="train")
-    # train_sampler = RandomSampler(train_dataset)
-    # train_dataloader = DataLoader(
-    #     train_dataset, sampler=train_sampler, batch_size=args.batch_size
-    # )
-
-    # eval_dataset = SASRecDataset(args, user_seq, data_type="valid")
-    # eval_sampler = SequentialSampler(eval_dataset)
-    # eval_dataloader = DataLoader(
-    #     eval_dataset, sampler=eval_sampler, batch_size=args.batch_size
-    # )
-
-    # test_dataset = SASRecDataset(args, user_seq, data_type="test")
-    # test_sampler = SequentialSampler(test_dataset)
-    # test_dataloader = DataLoader(
-    #     test_dataset, sampler=test_sampler, batch_size=args.batch_size
-    # )
-
-    # model = S3RecModel(args=args)
-
-    # trainer = FinetuneTrainer(
-    #     model, train_dataloader, eval_dataloader, test_dataloader, None, args
-    # )
-
-    # print(args.using_pretrain)
-    # if args.using_pretrain:
-    #     pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
-    #     try:
-    #         trainer.load(pretrained_path)
-    #         print(f"Load Checkpoint From {pretrained_path}!")
-
-    #     except FileNotFoundError:
-    #         print(f"{pretrained_path} Not Found! The Model is same as SASRec")
-    # else:
-    #     print("Not using pretrained model. The Model is same as SASRec")
-
-    # early_stopping = EarlyStopping(args.checkpoint_path, patience=10, verbose=True)
-    # for epoch in range(args.epochs):
-    #     trainer.train(epoch)
-
-    #     scores, _ = trainer.valid(epoch)
-
-    #     early_stopping(np.array(scores[-1:]), trainer.model)
-    #     if early_stopping.early_stop:
-    #         print("Early stopping")
-    #         break
-
-    # trainer.args.train_matrix = test_rating_matrix
-    # print("---------------Change to test_rating_matrix!-------------------")
-    # # load the best model
-    # trainer.model.load_state_dict(torch.load(args.checkpoint_path))
-    # scores, result_info = trainer.test(0)
-    # print(result_info)
 
 if __name__ == "__main__":
     main()
