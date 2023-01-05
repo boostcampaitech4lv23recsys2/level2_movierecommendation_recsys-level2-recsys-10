@@ -14,6 +14,7 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs,
     set_seed,
+    item2idx_,
 )
 
 import wandb
@@ -31,7 +32,7 @@ def main(args):
     item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
 
     user_seq, max_item, valid_rating_matrix, test_rating_matrix, _ = get_user_seqs(
-        args.data_file
+        args.data_file, item2idx_
     )
 
     item2attribute, attribute_size = get_item2attribute_json(item2attribute_file)
@@ -80,17 +81,17 @@ def main(args):
             model, train_dataloader, eval_dataloader, test_dataloader, None, args
         )
 
-        print(args.using_pretrain)
-        if args.using_pretrain:
-            pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
-            try:
-                trainer.load(pretrained_path)
-                print(f"Load Checkpoint From {pretrained_path}!")
+#         print(args.using_pretrain)
+#         if args.using_pretrain:
+#             pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
+#             try:
+#                 trainer.load(pretrained_path)
+#                 print(f"Load Checkpoint From {pretrained_path}!")
 
-            except FileNotFoundError:
-                print(f"{pretrained_path} Not Found! The Model is same as SASRec")
-        else:
-            print("Not using pretrained model. The Model is same as SASRec")
+#             except FileNotFoundError:
+#                 print(f"{pretrained_path} Not Found! The Model is same as SASRec")
+#         else:
+#             print("Not using pretrained model. The Model is same as SASRec")
 
         early_stopping = EarlyStopping(args.checkpoint_path, patience=args.patience, verbose=True)
         for epoch in range(args.epochs):
@@ -99,8 +100,8 @@ def main(args):
 
             scores, _ = trainer.valid(epoch)
             
-            # early_stopping(np.array(scores[-1:]), trainer.model)
-            early_stopping(np.array(scores[2]), trainer.model) # RECALL@10
+            early_stopping(np.array(scores[-1:]), trainer.model)
+            # early_stopping(np.array(scores[2]), trainer.model) # RECALL@10
             if early_stopping.early_stop:
                 print("Early stopping")
                 break

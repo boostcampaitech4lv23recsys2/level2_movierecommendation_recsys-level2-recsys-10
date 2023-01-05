@@ -14,7 +14,7 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs_long,
     set_seed,
-    item2idx_,
+    generate_item2idx,
 )
 
 import wandb
@@ -25,7 +25,7 @@ def main(args):
     set_seed(args.seed)
     check_path(args.output_dir)
 
-    args.checkpoint_path = os.path.join(args.output_dir, "Pretrain.pt")
+    args.checkpoint_path = os.path.join(args.output_dir, "Pretrain_test.pt")
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     args.cuda_condition = torch.cuda.is_available() and not args.no_cuda
@@ -33,6 +33,9 @@ def main(args):
     # args.data_file = args.data_dir + args.data_name + '.txt'
     args.data_file = args.data_dir + "train_ratings.csv"
     item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
+
+    item2idx_, idx2item_ = generate_item2idx()
+    
     # concat all user_seq get a long sequence, from which sample neg segment for SP
     user_seq, max_item, long_sequence = get_user_seqs_long(args.data_file, item2idx_) # random_sort=0
 

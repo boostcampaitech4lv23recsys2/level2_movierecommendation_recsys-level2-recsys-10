@@ -13,8 +13,7 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs,
     set_seed,
-    item2idx_,
-    idx2item_,
+    generate_item2idx,
 )
 
 from args import parse_args
@@ -28,6 +27,8 @@ def main(args):
 
     args.data_file = args.data_dir + "train_ratings.csv"
     item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
+    
+    item2idx_, idx2item_ = generate_item2idx()
 
     user_seq, max_item, _, _, submission_rating_matrix = get_user_seqs(args.data_file, item2idx_)
 

@@ -14,7 +14,7 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs,
     set_seed,
-    item2idx_,
+    generate_item2idx,
 )
 
 import wandb
@@ -31,6 +31,8 @@ def main(args):
     args.data_file = args.data_dir + "train_ratings.csv"
     item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
 
+    item2idx_, idx2item_ = generate_item2idx()
+    
     user_seq, max_item, valid_rating_matrix, test_rating_matrix, _ = get_user_seqs(
         args.data_file, item2idx_
     )
@@ -49,7 +51,7 @@ def main(args):
     args.item2attribute = item2attribute
     # set item score in train set to `0` in validation
     args.train_matrix = valid_rating_matrix
-
+    
     # save model
     checkpoint = args_str + ".pt"
     args.checkpoint_path = os.path.join(args.output_dir, checkpoint)
@@ -83,7 +85,7 @@ def main(args):
 
         print(args.using_pretrain)
         if args.using_pretrain:
-            pretrained_path = os.path.join(args.output_dir, "Pretrain_2.pt")
+            pretrained_path = os.path.join(args.output_dir, "Pretrain_test.pt")
             try:
                 trainer.load(pretrained_path)
                 print(f"Load Checkpoint From {pretrained_path}!")

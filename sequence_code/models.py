@@ -192,7 +192,6 @@ class S3RecModel(nn.Module):
                 sp_distance, torch.ones_like(sp_distance, dtype=torch.float32)
             )
         )
-
         return aap_loss, mip_loss, map_loss, sp_loss
 
     # Fine tune

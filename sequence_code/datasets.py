@@ -3,7 +3,7 @@ import random
 import torch
 from torch.utils.data import Dataset
 
-from utils import neg_sample, get_popular_items, neg_sample_from_popular_items, item2idx_
+from utils import neg_sample, get_popular_items, neg_sample_from_popular_items, generate_item2idx
 
 class PretrainDataset(Dataset):
     def __init__(self, args:dict, user_seq:list, long_sequence:list):
@@ -13,6 +13,7 @@ class PretrainDataset(Dataset):
         self.max_len = args.max_seq_length
         self.part_sequence = []
         self.split_sequence()
+        item2idx_, idx2item_ = generate_item2idx()
         if args.neg_from_pop:
             self.popular_items = get_popular_items(args.data_file, item2idx_, args.neg_from_pop)
 
@@ -158,8 +159,9 @@ class SASRecDataset(Dataset):
         self.test_neg_items = test_neg_items
         self.data_type = data_type
         self.max_len = args.max_seq_length
-        if args.neg_from_pop:
-            self.popular_items = get_popular_items(args.data_file, item2idx_, args.neg_from_pop)
+        item2idx_, idx2item_ = generate_item2idx()
+        if self.args.neg_from_pop:
+            self.popular_items = get_popular_items(self.args.data_file, item2idx_, args.neg_from_pop)
 
     def __getitem__(self, index):
 
@@ -203,7 +205,7 @@ class SASRecDataset(Dataset):
         target_neg = []
         seq_set = set(items)
         for _ in input_ids:
-            if args.neg_from_pop:
+            if self.args.neg_from_pop:
                 target_neg.append(neg_sample_from_popular_items(seq_set, self.popular_items, self.max_len))
             else:
                 target_neg.append(neg_sample(seq_set, self.args.item_size))
