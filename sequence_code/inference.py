@@ -35,7 +35,7 @@ def main(args):
 
     args_str = f"{args.model_name}-{args.data_name}"
     checkpoint = args_str + ".pt"
-    args.checkpoint_path = os.path.join(args.output_dir, checkpoint)
+    args.checkpoint_path = os.path.join(args.output_dir,'0.0768BERT4Rec-Ml.pt')
     
     elem =AttributeDict({})
     """SASRec 종속 
@@ -87,19 +87,19 @@ def main(args):
         print(f'num users: {elem.num_user}, num items: {elem.num_item}')
         
         # model setting 
-        args.max_len = 150 # 200
-        args.hidden_units = 150 # 200
+        args.max_len = 300 # 200
+        args.hidden_units = 300 # 200
         args.num_heads = 1
         args.num_layers = 2
-        args.dropout_rate = 0.0# 0.2
+        args.dropout_rate = 0# 0.2
         args.num_workers = 1
         args.device = 'cuda' 
 
         # training setting
-        args.lr = 0.001
-        args.batch_size = 128 # 256
+        args.lr = 0.0022208103691017784
+        args.batch_size = 256 # 256
         args.num_epochs = 200
-        args.mask_prob = 0.15 # for cloze task
+        args.mask_prob = 0.27911774953244783 # for cloze task
         
         submission_dataset = ClozeDataSet(user_seq,attr_seqs, args, elem, is_submission=True)
         submission_sampler = SequentialSampler(submission_dataset)

@@ -180,8 +180,8 @@ def main(args):
 
             scores, _ = trainer.valid(epoch)
             
-            early_stopping(np.array(scores[-1:]), trainer.model)
-            # early_stopping(np.array(scores[2]), trainer.model) # RECALL@10
+            # early_stopping(np.array(scores[-1:]), trainer.model)
+            early_stopping(np.array([scores[2]]), trainer.model) # RECALL@10
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
