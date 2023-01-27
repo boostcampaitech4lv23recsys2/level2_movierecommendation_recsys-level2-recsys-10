@@ -10,7 +10,7 @@ Competition 용도로 재구성된 MovieLens 데이터를 이용해 User의 영�
 - 개발환경 : VScode, PyTorch, Jupyter, Ubuntu 18.04.5 LTS, GPU Tesla V100-PCIE-32GB
 - 협업 Tool : GitHub, Notion
 - 시각화 : WandB
-### 📁1-4. 프로젝트 구조도
+### 1-4. 프로젝트 구조도
 - (1) Sequence folder
     - BERT4Rec
     - FPMC
@@ -36,10 +36,11 @@ train
 ```
 
 
-##:man_technologist: Members 2. 프로젝트 팀 구성 및 역할
+## 2. 프로젝트 팀 구성 및 역할
 |[구혜인](https://github.com/hyein99?tab=repositories)|[권은채](https://github.com/dmscornjs)|[박건영](https://github.com/kuuneeee)|[장현우](https://github.com/jhu8802)|[정현호](https://github.com/Heiness)|[허유진](https://github.com/hobbang2)|
 |----|----|----|----|----|----|
 |MultiVAE/DAE 모델 구현 및 최적화|EASE모델 구현 및 최적화|SASRec, S3Rec모델 구현 및 최적화|FPMC 모델 구현 및 최적화|RecVAE 모델 구현 및 최적화|EDA, BERT4Rec 모델 구현 및 최적화|
+
 
 ## 3. 프로젝트 진행
 ### 3-1. 사전 기획
@@ -56,6 +57,7 @@ train
 ### 3-2. 프로젝트 수행
 ![제목 없는 다이어그램 drawio](https://user-images.githubusercontent.com/49949138/215053398-cd6613a2-c352-4630-a69a-e4334805963c.png)
 두 번의 세미나를 진행한 결과 Sequence 모델과 Encoder 모델이 MovieLens 데이터에 적절하다고 판단하였고, 2개의 세부 팀(Sequence팀, Encoder팀)으로 분리하여 프로젝트를 진행했다. Sequence팀, Encoder팀 각자 베이스라인 코드를 작성한 후 공유하는 세미나를 진행했다. 이후, 작성한 베이스라인 코드를 기준으로 테스트를 진행했다.
+
 
 ## 4. 프로젝트 수행 결과
 ### 4-1. 모델 성능 및 결과
@@ -104,6 +106,7 @@ train
     	- Ensemble 대상 모델 중 상위 N개를 추출하여 10개의 추천 Item으로 구성
     	- N개의 기준은 모델의 성능 별 가중치 부여
 
+
 ## 5. WrapUp Report
 [Level_2_MovieRecommendation_랩업리포트](https://www.notion.so/Level_2_MovieRecommendation_-c55d747e6dfb408ea7c378cba5576818)
 
@@ -129,8 +132,3 @@ train
 │   ├── trainers.py
 │   └── utils.py
 ```
-
-## :man_technologist: Members
-구혜인 권은채 박건영 장현우 정현호 허유진
-
-
