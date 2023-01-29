@@ -1,15 +1,19 @@
 # :movie_camera: Movie Recommendation
 
 ## 1. 프로젝트 개요
+
 ### 1-1. 프로젝트 주제
 ![image_movie_recommendation_1](https://user-images.githubusercontent.com/79534756/206973144-f99f537b-2d5f-477e-9184-c35eacb8706b.JPG)
 Competition 용도로 재구성된 MovieLens 데이터를 이용해 User의 영화 시청 이력 데이터를 바탕으로 User가 선호할 영화를 예측한다. User Sequence에서 일부 데이터가 누락된 상황을 가정했기 때문에, Timestamp를 고려한 User의 순차적인 이력과 Implicit Feedback을 함께 고려해야 하는 문제이다.
+
 ### 1-2. 프로젝트 기간
 2022.12.12 ~ 2022.1.06(4주)
+
 ### 1-3. 활용 장비 및 재료
 - 개발환경 : VScode, PyTorch, Jupyter, Ubuntu 18.04.5 LTS, GPU Tesla V100-PCIE-32GB
 - 협업 Tool : GitHub, Notion
 - 시각화 : WandB
+
 ### 1-4. 프로젝트 구조도
 - (1) Sequence folder
     - BERT4Rec
@@ -23,6 +27,7 @@ Competition 용도로 재구성된 MovieLens 데이터를 이용해 User의 영�
     - RecVAE
 - (3) Ensemble
 - (4) EDA
+
 ### 1-5. 데이터 구조
 ```
 train
@@ -35,22 +40,23 @@ train
 └── years.tsv
 ```
 
+<br>
 
 ## 2. 프로젝트 팀 구성 및 역할
 |[구혜인](https://github.com/hyein99?tab=repositories)|[권은채](https://github.com/dmscornjs)|[박건영](https://github.com/kuuneeee)|[장현우](https://github.com/jhu8802)|[정현호](https://github.com/Heiness)|[허유진](https://github.com/hobbang2)|
 |----|----|----|----|----|----|
 |MultiVAE/DAE 모델 구현 및 최적화|EASE모델 구현 및 최적화|SASRec, S3Rec모델 구현 및 최적화|FPMC 모델 구현 및 최적화|RecVAE 모델 구현 및 최적화|EDA, BERT4Rec 모델 구현 및 최적화|
 
+<br>
 
 ## 3. 프로젝트 진행
+
 ### 3-1. 사전 기획
 - 22.12.12(월) : Git branch 전략 회의
 ![Untitled](https://user-images.githubusercontent.com/49949138/215054280-ae1c99fc-212f-451c-880f-2e25469c1fab.png)
-
 - 모델 탐색
     - 22.12.16(금) : 실습 기반 모델 세미나
     - 22.12.20(화) : 논문 기반 모델 세미나
-
 - 베이스라인 코드 작성 및 실험 결과 공유
     - 22.12.23(금) : 베이스라인 세미나
       
@@ -58,8 +64,10 @@ train
 ![제목 없는 다이어그램 drawio](https://user-images.githubusercontent.com/49949138/215053398-cd6613a2-c352-4630-a69a-e4334805963c.png)
 두 번의 세미나를 진행한 결과 Sequence 모델과 Encoder 모델이 MovieLens 데이터에 적절하다고 판단하였고, 2개의 세부 팀(Sequence팀, Encoder팀)으로 분리하여 프로젝트를 진행했다. Sequence팀, Encoder팀 각자 베이스라인 코드를 작성한 후 공유하는 세미나를 진행했다. 이후, 작성한 베이스라인 코드를 기준으로 테스트를 진행했다.
 
+<br>
 
 ## 4. 프로젝트 수행 결과
+
 ### 4-1. 모델 성능 및 결과
 **■ 결과 (상위 4 개) : Publie, Private 4위 🏅**
 | SASRec | BERT | FPMC | EASE | multiVAE | multiDAE | RecVAE |
@@ -72,7 +80,17 @@ train
 | O | EASE (1), RecVAE(0.9), MultiDAE(0.8), MultiVAE(0.7), Sasrec(1) | 0.1726 | 0.1651 |
 | X | EASE , RecVAE, MultiDAE, MultiVAE, SASRec, Recall@10 순위, 모델 가중치 | 0.1630 | 0.1623 |
 | O | EASE 와 SASRec 을 5:5 비율로 섞음  | 0.1758 | 0.1615 |
+
 ### 4-2. 모델 개요
+- 1. Sequence 계열 모델
+	- 1) SASRec
+	- 2) BERT4Rec
+	- 3) FPMC
+- 2. Encoder 계열 모델
+	- 1) EASE
+	- 2) MultiVAE/DAE
+	- 3) RecVAE
+
 ### 4-3. 모델 선정
 - 베이스라인 코드
     - SASRec & S3Rec
@@ -106,29 +124,8 @@ train
     	- Ensemble 대상 모델 중 상위 N개를 추출하여 10개의 추천 Item으로 구성
     	- N개의 기준은 모델의 성능 별 가중치 부여
 
+<br>
 
 ## 5. WrapUp Report
 [Level_2_MovieRecommendation_랩업리포트](https://www.notion.so/Level_2_MovieRecommendation_-c55d747e6dfb408ea7c378cba5576818)
 
-
-
-
-
-## 📁프로젝트 구조
-
-```
-├── code
-│   ├── datasets.py
-│   ├── inference.py
-│   ├── models.py
-│   ├── modules.py
-│   ├── output
-│   │   └── most_popular_submission.csv
-│   ├── preprocessing.py
-│   ├── requirements.txt
-│   ├── run_pretrain.py
-│   ├── run_train.py
-│   ├── sample_submission.ipynb
-│   ├── trainers.py
-│   └── utils.py
-```
