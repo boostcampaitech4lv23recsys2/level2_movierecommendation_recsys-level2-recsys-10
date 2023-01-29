@@ -12,6 +12,9 @@ from utils import (
     set_seed,
     indexinfo,
     neg_sample,
+    get_popular_items,
+    eg_sample_from_popular_items,
+    generate_item2idx
 )
 
 class PretrainDataset(Dataset):
@@ -22,9 +25,8 @@ class PretrainDataset(Dataset):
         self.max_len = args.max_seq_length
         self.part_sequence = []
         self.split_sequence()
-
         item2idx_, idx2item_ = indexinfo.get_index_info()
-
+        
         if args.neg_from_pop:
             self.popular_items = get_popular_items(args.data_file, item2idx_, args.neg_from_pop)
 
@@ -64,8 +66,8 @@ class PretrainDataset(Dataset):
                     masked_item_sequence.append(item)
                 
                 if self.args.neg_from_pop:
-                    # 현재 item_set 에 없는 item 을 추가 
-                    neg_items.append(neg_sample(item_set, self.args.item_size))
+                    # 현재 item_set 에 없는 item 을 추가
+                    neg_items.append(neg_sample_from_popular_items(item_set, self.popular_items, self.max_len))
                 else:
                     neg_items.append(neg_sample(item_set, self.args.item_size))
 
@@ -172,15 +174,10 @@ class SASRecDataset(Dataset):
         self.test_neg_items = test_neg_items
         self.data_type = data_type
         self.max_len = args.max_seq_length
-
-        # self.item_size = elem.max_item + 2
-        # self.mask_id = elem.max_item + 1
-        # self.attribute_size = elem.attribute_size + 1
-
         item2idx_, idx2item_ = indexinfo.get_index_info()
-
-        if args.neg_from_pop:
-            self.popular_items = get_popular_items(args.data_file, item2idx_, args.neg_from_pop)
+        
+        if self.args.neg_from_pop:
+            self.popular_items = get_popular_items(self.args.data_file, item2idx_, args.neg_from_pop)
 
     def __getitem__(self, index):
 

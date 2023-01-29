@@ -17,6 +17,7 @@ from utils import (
     indexinfo,
     AttributeDict,
     get_attr_seqs,
+    generate_item2idx,
 )
 
 from args import parse_args
@@ -32,7 +33,19 @@ def main(args):
     args.cuda_condition = torch.cuda.is_available() and not args.no_cuda
 
     args.data_file = args.data_dir + "train_ratings.csv"
+    item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
+    
+    item2idx_, idx2item_ = generate_item2idx()
 
+    user_seq, max_item, _, _, submission_rating_matrix = get_user_seqs(args.data_file, item2idx_)
+
+    item2attribute, attribute_size = get_item2attribute_json(item2attribute_file)
+
+    args.item_size = max_item + 2
+    args.mask_id = max_item + 1
+    args.attribute_size = attribute_size + 1
+
+    # save model args
     args_str = f"{args.model_name}-{args.data_name}"
     checkpoint = args_str + ".pt"
     args.checkpoint_path = os.path.join(args.output_dir,'0.0768BERT4Rec-Ml.pt')
@@ -115,7 +128,7 @@ def main(args):
     print(f"Load model from {args.checkpoint_path} for submission!")
     
     preds = trainer.submission(0)
-    generate_submission_file_v2(args.data_file, preds,idx2item_)
+    generate_submission_file(args.data_file, preds, idx2item_)
 
 
 if __name__ == "__main__":

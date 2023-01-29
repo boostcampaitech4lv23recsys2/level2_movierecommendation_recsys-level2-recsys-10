@@ -14,6 +14,8 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs_long,
     set_seed,
+    modeling_sequence_bert,
+    generate_item2idx,
 )
 
 def parse_args():
@@ -21,7 +23,7 @@ def parse_args():
     
     parser.add_argument("--sweep", default="False", type=bool)
     parser.add_argument("--random_sort", default=0.0, type=float)
-    parser.add_argument("--neg_from_pop", default=0.0, type=float)
+    parser.add_argument("--neg_from_pop", default=1, type=float)
     parser.add_argument("--loss_fn", default="cn", type=str)
     
     parser.add_argument("--data_dir", default="../data/train/", type=str)
@@ -68,7 +70,7 @@ def parse_args():
 
     # pre train args
     parser.add_argument(
-        "--pre_epochs", type=int, default=300, help="number of pre_train epochs"
+        "--pre_epochs", type=int, default=10, help="number of pre_train epochs"
     )
     parser.add_argument("--pre_batch_size", type=int, default=512)
 
@@ -96,13 +98,7 @@ def parse_args():
     parser.add_argument("--dropout_rate", type=float, default=0.2)
     # parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--mask_prob", type=float, default=0.1456260638867132)
-
-    # args.mask_prob = 0.15 # for cloze task
-    # args.num_heads = 1
-    # args.num_layers = 2
-    # args.dropout_rate=0.2
-    # args.batch_size = 256
-
+    
     args = parser.parse_args()
 
     return args

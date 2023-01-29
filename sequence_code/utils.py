@@ -161,37 +161,21 @@ def generate_rating_matrix_submission(user_seq, num_users, num_items):
     return rating_matrix
 
 
-def generate_submission_file(data_file, preds):
+def generate_submission_file(data_file, preds, idx2item_):
 
     rating_df = pd.read_csv(data_file)
     users = rating_df["user"].unique()
 
     result = []
-
     for index, items in enumerate(preds):
-        for item in items:
-            result.append((users[index], item))
+        # for item in items:
+        #     if item == 6808:
+        #         item = 6807
+            result.append((users[index], idx2item_[item]))  # title index화한거 item으로 되돌리기
 
     pd.DataFrame(result, columns=["user", "item"]).to_csv(
         "output/submission.csv", index=False
     )
-
-
-def generate_submission_file_v2(data_file, preds, item2idx_):
-
-    rating_df = pd.read_csv(data_file)
-    users = rating_df["user"].unique()
-
-    result = []
-
-    for index, items in enumerate(preds):
-        for item in items:
-            result.append((users[index], item2idx_[item]))  # title index화한거 item으로 되돌리기
-
-    pd.DataFrame(result, columns=["user", "item"]).to_csv(
-        "output/submission.csv", index=False
-    )
-
 
 def get_attr_seqs(data_file, random_sort=0, b_sort_by_time:bool=False ):
 
@@ -497,3 +481,4 @@ class IndexInfo :
 
 indexinfo = IndexInfo('../data/train/item2idx.tsv')   
 item2idx_,idx2item_=indexinfo.get_index_info()
+# item2idx_, idx2item_ = generate_item2idx()

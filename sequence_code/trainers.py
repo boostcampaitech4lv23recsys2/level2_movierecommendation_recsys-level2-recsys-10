@@ -65,6 +65,7 @@ class Trainer:
         for k in [5, 10]:
             recall.append(recall_at_k(answers, pred_list, k))
             ndcg.append(ndcg_k(answers, pred_list, k))
+        
         post_fix = {
             "epoch": epoch,
             "RECALL@5": round(recall[0],4),
@@ -72,6 +73,7 @@ class Trainer:
             "RECALL@10": round(recall[1],4),
             "NDCG@10": round(ndcg[1],4),
         }
+
         print(post_fix)
 
         return [recall[0], ndcg[0], recall[1], ndcg[1]], post_fix
@@ -245,6 +247,8 @@ class FinetuneTrainer(Trainer):
             total=len(dataloader),
             bar_format="{l_bar}{r_bar}",
         )
+        
+        best_recall = 0
         if mode == "train":
             self.model.train()
             rec_avg_loss = 0.0
@@ -296,6 +300,7 @@ class FinetuneTrainer(Trainer):
                 rating_pred[self.elem.train_matrix[batch_user_index].toarray() > 0] = 0
 
                 ind = np.argpartition(rating_pred, -10)[:, -10:]
+                # ind = np.argpartition(rating_pred, -20)[:, -20:]
 
                 arr_ind = rating_pred[np.arange(len(rating_pred))[:, None], ind]
 
@@ -313,10 +318,10 @@ class FinetuneTrainer(Trainer):
                     answer_list = np.append(
                         answer_list, answers.cpu().data.numpy(), axis=0
                     )
-
             if mode == "submission":
                 return pred_list
             else:
+                print(1)
                 score, metrics = self.get_full_sort_score(epoch, answer_list, pred_list)
                 wandb.log(metrics, step=epoch)
                 return score, metrics

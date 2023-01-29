@@ -17,6 +17,7 @@ from utils import (
     indexinfo,
     AttributeDict,
     get_attr_seqs,
+    generate_item2idx,
 )
 
 import wandb
@@ -33,19 +34,52 @@ def main(args):
     args.cuda_condition = torch.cuda.is_available() and not args.no_cuda
 
     args.data_file = args.data_dir + "train_ratings.csv"
+    item2attribute_file = args.data_dir + args.data_name + "_item2attributes.json"
+
+    item2idx_, idx2item_ = generate_item2idx()
     
-    # save model args
+    user_seq, max_item, valid_rating_matrix, test_rating_matrix, _ = get_user_seqs(
+        args.data_file, item2idx_
+    )
+
+    item2attribute, attribute_size = get_item2attribute_json(item2attribute_file)
+
+    args.item_size = max_item + 2
+    args.mask_id = max_item + 1
+    args.attribute_size = attribute_size + 1
+
+# save model args
     args_str = f"{args.model_name}-{args.data_name}"
     args.log_file = os.path.join(args.output_dir, args_str + ".txt")
     print(str(args))
 
-    class AttributeDict(dict):
-        __getattr__ = dict.__getitem__
-        __setattr__ = dict.__setitem__
-        __delattr__ = dict.__delitem__
-
-
     elem =AttributeDict({})
+
+    args.item2attribute = item2attribute
+    # set item score in train set to `0` in validation
+    args.train_matrix = valid_rating_matrix
+    
+    # save model
+    checkpoint = args_str + ".pt"
+    args.checkpoint_path = os.path.join(args.output_dir, checkpoint)
+
+    train_dataset = SASRecDataset(args, user_seq, data_type="train")
+    train_sampler = RandomSampler(train_dataset)
+    train_dataloader = DataLoader(
+        train_dataset, sampler=train_sampler, batch_size=args.batch_size
+    )
+
+    eval_dataset = SASRecDataset(args, user_seq, data_type="valid")
+    eval_sampler = SequentialSampler(eval_dataset)
+    eval_dataloader = DataLoader(
+        eval_dataset, sampler=eval_sampler, batch_size=args.batch_size
+    )
+
+    test_dataset = SASRecDataset(args, user_seq, data_type="test")
+    test_sampler = SequentialSampler(test_dataset)
+    test_dataloader = DataLoader(
+        test_dataset, sampler=test_sampler, batch_size=args.batch_size
+    )
     
     if "Finetune_full" == args.model_name : 
 
@@ -154,7 +188,7 @@ def main(args):
 
         print(args.using_pretrain)
         if args.using_pretrain:
-            pretrained_path = os.path.join(args.output_dir, "Pretrain.pt")
+            pretrained_path = os.path.join(args.output_dir, "Pretrain_test.pt")
             try:
                 trainer.load(pretrained_path)
                 print(f"Load Checkpoint From {pretrained_path}!")
