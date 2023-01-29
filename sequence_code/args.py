@@ -14,6 +14,7 @@ from utils import (
     get_item2attribute_json,
     get_user_seqs_long,
     set_seed,
+    modeling_sequence_bert,
     generate_item2idx,
 )
 
@@ -30,7 +31,10 @@ def parse_args():
     parser.add_argument("--data_name", default="Ml", type=str)
 
     # model args
-    parser.add_argument("--model_name", default="Pretrain", type=str)
+    parser.add_argument("--model_name", type=str, default="BERT4Rec",
+     choices=['Pretrain', 'Finetune_full', 'BERT4Rec'],
+     help='학습 및 예측할 모델을 선택할 수 있습니다.'
+     )
 
     parser.add_argument(
         "--hidden_size", type=int, default=64, help="hidden size of transformer model"
@@ -51,11 +55,12 @@ def parse_args():
     )
     parser.add_argument("--initializer_range", type=float, default=0.02)
     parser.add_argument("--max_seq_length", default=50, type=int)
+    parser.add_argument("--max_len", default=350, type=int)
 
     # train args
-    parser.add_argument("--lr", type=float, default=0.001, help="learning rate of adam")
+    parser.add_argument("--lr", type=float, default=0.0002570993420212356, help="learning rate of adam")
     parser.add_argument(
-        "--batch_size", type=int, default=256, help="number of batch_size"
+        "--batch_size", type=int, default=128, help="number of batch_size"
     )
     parser.add_argument("--epochs", type=int, default=200, help="number of epochs")
     parser.add_argument("--patience", type=int, default=20, help="patience for early stopping")
@@ -88,6 +93,12 @@ def parse_args():
     
     parser.add_argument("--using_pretrain", action="store_true")
 
+    parser.add_argument("--num_heads", type=int, default=1)
+    parser.add_argument("--num_layers", type=int, default=2)
+    parser.add_argument("--dropout_rate", type=float, default=0.2)
+    # parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--mask_prob", type=float, default=0.1456260638867132)
+    
     args = parser.parse_args()
 
     return args

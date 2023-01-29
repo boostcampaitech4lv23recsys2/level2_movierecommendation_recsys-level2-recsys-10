@@ -1,9 +1,21 @@
 import random
+import numpy as np
 
 import torch
 from torch.utils.data import Dataset
 
-from utils import neg_sample, get_popular_items, neg_sample_from_popular_items, generate_item2idx
+from utils import (
+    EarlyStopping,
+    check_path,
+    get_item2attribute_json,
+    get_user_seqs,
+    set_seed,
+    indexinfo,
+    neg_sample,
+    get_popular_items,
+    eg_sample_from_popular_items,
+    generate_item2idx
+)
 
 class PretrainDataset(Dataset):
     def __init__(self, args:dict, user_seq:list, long_sequence:list):
@@ -13,7 +25,8 @@ class PretrainDataset(Dataset):
         self.max_len = args.max_seq_length
         self.part_sequence = []
         self.split_sequence()
-        item2idx_, idx2item_ = generate_item2idx()
+        item2idx_, idx2item_ = indexinfo.get_index_info()
+        
         if args.neg_from_pop:
             self.popular_items = get_popular_items(args.data_file, item2idx_, args.neg_from_pop)
 
@@ -125,7 +138,7 @@ class PretrainDataset(Dataset):
         for item in pos_items:
             attribute = [0] * self.args.attribute_size
             try:
-                now_attribute = self.args.item2attribute[str(item)]
+                now_attribute = self.item2attribute[str(item)]
                 for a in now_attribute:
                     attribute[a] = 1
             except:
@@ -153,13 +166,16 @@ class PretrainDataset(Dataset):
 
 
 class SASRecDataset(Dataset):
-    def __init__(self, args, user_seq, test_neg_items=None, data_type="train"):
+    def __init__(self, args, elem, user_seq, test_neg_items=None, data_type="train"):
         self.args = args
+        self.elem = elem
+
         self.user_seq = user_seq
         self.test_neg_items = test_neg_items
         self.data_type = data_type
         self.max_len = args.max_seq_length
-        item2idx_, idx2item_ = generate_item2idx()
+        item2idx_, idx2item_ = indexinfo.get_index_info()
+        
         if self.args.neg_from_pop:
             self.popular_items = get_popular_items(self.args.data_file, item2idx_, args.neg_from_pop)
 
@@ -208,7 +224,7 @@ class SASRecDataset(Dataset):
             if self.args.neg_from_pop:
                 target_neg.append(neg_sample_from_popular_items(seq_set, self.popular_items, self.max_len))
             else:
-                target_neg.append(neg_sample(seq_set, self.args.item_size))
+                target_neg.append(neg_sample(seq_set, self.elem.item_size))
 
         pad_len = self.max_len - len(input_ids)
         input_ids = [0] * pad_len + input_ids
@@ -247,3 +263,70 @@ class SASRecDataset(Dataset):
 
     def __len__(self):
         return len(self.user_seq)
+
+
+class ClozeDataSet(Dataset):
+    def __init__(self, user_seq,attr_seq, args, elem, is_submission:bool=False):
+        self.user_seq  = user_seq
+        self.num_user  = len(user_seq)
+        self.num_item  = elem.num_item
+        self.max_len   = args.max_len
+        self.mask_prob = args.mask_prob
+        self.is_submission = is_submission
+
+        self.attr_seq = attr_seq
+
+
+    def __getitem__(self, user): 
+        # iterator를 구동할 때 사용됩니다.
+        user_id = user
+
+        seq = self.user_seq[user]
+        attr_seq = self.attr_seq[user]
+        tokens = []
+        attrs = [] 
+        labels = []
+
+        if( "submission"== self.is_submission ):
+            tokens = seq[:].copy()
+            attrs = attr_seq[:].copy()
+            # labbels not use
+
+        else :
+            seq = seq[:-1]
+            attrs = attr_seq[:-1]
+            for s in seq:
+                prob = np.random.rand() 
+                if prob < self.mask_prob:
+                    prob /= self.mask_prob
+
+                    # BERT 학습
+                    # random 하게 80% 를 mask token 으로 변환 
+                    if prob < 0.8:
+                        # masking
+                        tokens.append(self.num_item + 1)  # mask_index: num_item + 1, 0: pad, 1~num_item: item index
+                    # random 하게 10% 를 random token 으로 변환 
+                    elif prob < 0.9:
+                        tokens.append(np.random.randint(1, self.num_item+1))  # item random sampling
+                    else:
+                    # 나머지 10% 를 original token 으로 사용
+                        tokens.append(s)
+                    labels.append(s)  # 학습에 사용
+                else:
+                    tokens.append(s)
+                    labels.append(0)  # 학습에 사용 X, trivial
+
+        tokens = tokens[-self.max_len:]
+        attrs  = attrs[-self.max_len:]
+        labels = labels[-self.max_len:]
+        mask_len = self.max_len - len(tokens)
+
+        # zero padding
+        tokens = [0] * mask_len + tokens
+        attrs  = [0] * mask_len + attrs
+        labels = [0] * mask_len + labels
+        return torch.tensor(user_id, dtype=torch.long),torch.LongTensor(tokens), torch.LongTensor(labels),torch.LongTensor(attrs)
+    
+    def __len__(self):
+        # 총 user의 수 = 학습에 사용할 sequence의 수
+        return self.num_user
