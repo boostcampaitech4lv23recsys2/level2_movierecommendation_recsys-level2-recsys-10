@@ -7,7 +7,7 @@
 Competition 용도로 재구성된 MovieLens 데이터를 이용해 User의 영화 시청 이력 데이터를 바탕으로 User가 선호할 영화를 예측한다. User Sequence에서 일부 데이터가 누락된 상황을 가정했기 때문에, Timestamp를 고려한 User의 순차적인 이력과 Implicit Feedback을 함께 고려해야 하는 문제이다.
 
 ### 1-2. 프로젝트 기간
-2022.12.12 ~ 2022.1.06(4주)
+2022.12.12 ~ 2023.01.06(4주)
 
 ### 1-3. 활용 장비 및 재료
 - 개발환경 : VScode, PyTorch, Jupyter, Ubuntu 18.04.5 LTS, GPU Tesla V100-PCIE-32GB
